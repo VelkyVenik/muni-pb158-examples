@@ -23,8 +23,9 @@ With Podman, use `podman compose run --rm lab`.
 Two more modes run the same demo with extra detail:
 
 ```bash
-docker compose run --rm strace   # system calls under each socket call
-docker compose run --rm step     # the C code, line by line, as it runs
+docker compose run --rm strace        # system calls under each socket call
+docker compose run --rm step          # the C code, line by line, as it runs
+docker compose run --rm step_strace   # both: each line of C and the system calls it makes
 ```
 
 See [Watching system calls](#watching-system-calls-strace) and
@@ -205,6 +206,29 @@ What to observe:
 
 Too fast or too slow? In a pane, `Ctrl-C`, then for example `STEP_DELAY=1 ./step ./client`.
 
+### Code and system calls together (step_strace)
+
+```bash
+docker compose run --rm step_strace
+```
+
+Same as `step`, plus the system calls each line makes, right below it:
+
+```text
+│  69          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+      ↳ accept(3, 127.0.0.1:56042) = 4
+│  83          ssize_t n = recv(conn_fd, buf, sizeof(buf) - 1, 0);
+      ↳ recvfrom(4, "Hello server!", 1023) = 13
+```
+
+Now you can follow one call through all layers: the C line, the system call
+(`recv()` becomes `recvfrom()`), the program's own output, and the packet below.
+While a call is blocked, its line stays unfinished: `↳ accept(3`.
+
+strace itself cannot run together with gdb (a process can only be traced by one
+tool at a time), so here gdb catches the system calls (`step.py`). It shows fewer
+details than strace, but enough to see what goes into the kernel and what comes back.
+
 ### Stepping yourself with gdb
 
 To control the stepping yourself, press `Ctrl-C` in the SERVER pane and run:
@@ -262,9 +286,11 @@ Quitting stops the container. The next `docker compose run --rm lab` starts fres
 | `server.c`    | the server                                           |
 | `client.c`    | the client                                           |
 | `Makefile`    | builds both with `-g -O0 -Wall -Wextra -Wpedantic`   |
-| `start.sh`    | builds, creates the tmux layout, starts everything (`bash start.sh strace` / `step` for the other modes) |
+| `start.sh`    | builds, creates the tmux layout, starts everything (`bash start.sh strace` / `step` / `step_strace` for the other modes) |
 | `trace`       | runs a program under strace and highlights the system calls |
 | `step`        | runs a program under gdb, printing each line of C code as it runs |
+| `step_strace` | the same, plus the system calls each line makes      |
+| `step.py`     | the gdb (Python) script behind `step` and `step_strace` |
 | `packets`     | runs tcpdump and prints one readable line per packet |
 | `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2 |
 | `compose.yaml`| runs the container and mounts this directory at `/lab` |

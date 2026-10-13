@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#
+# Like ./step, but also shows the socket system calls each line makes:
+#
+#   │  27      int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+#         ↳ socket(AF_INET, SOCK_STREAM, 0) = 3
+#   SERVER: socket() -> fd=3
+#
+# strace itself cannot run together with gdb, so gdb catches the
+# system calls (see step.py).
+#
+#   usage: ./step_strace ./server
+#          STEP_DELAY=1 ./step_strace ./client
+
+STEP_SYSCALLS=1 exec gdb -q -batch -nx -x "$(dirname "$0")/step.py" --args "$@"

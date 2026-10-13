@@ -26,3 +26,8 @@ services:
   step:
     extends: lab
     command: ["bash", "start.sh", "step"]
+
+  # Stepping through the code, plus the system calls each line makes.
+  step_strace:
+    extends: lab
+    command: ["bash", "start.sh", "step_strace"]

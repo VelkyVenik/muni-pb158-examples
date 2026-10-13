@@ -11,6 +11,7 @@
 # Usage:  bash start.sh           the plain demo
 #         bash start.sh strace    same, with server and client under strace
 #         bash start.sh step      same, stepping through the C code line by line
+#         bash start.sh step_strace   step + the system calls each line makes
 #
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -41,8 +42,14 @@ case "$MODE" in
         SERVER_TITLE="SERVER (step)"
         CLIENT_TITLE="CLIENT (step)"
         ;;
+    step_strace)
+        SERVER_CMD="./step_strace ./server"   # gdb + system calls
+        CLIENT_CMD="./step_strace ./client"
+        SERVER_TITLE="SERVER (step + syscalls)"
+        CLIENT_TITLE="CLIENT (step + syscalls)"
+        ;;
     *)
-        echo "unknown mode: $MODE (use: demo, strace, step)" >&2
+        echo "unknown mode: $MODE (use: demo, strace, step, step_strace)" >&2
         exit 1
         ;;
 esac
