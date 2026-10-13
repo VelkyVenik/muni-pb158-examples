@@ -21,3 +21,8 @@ services:
   strace:
     extends: lab
     command: ["bash", "start.sh", "strace"]
+
+  # The same lab, stepping through the C code line by line (gdb).
+  step:
+    extends: lab
+    command: ["bash", "start.sh", "step"]

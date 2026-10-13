@@ -1,8 +1,8 @@
 # socket-lab
 
 A TCP server and client in C, talking to each other over loopback, while
-`tcpdump` shows every packet they exchange, and optionally `strace` shows
-every system call. Everything runs inside one
+`tcpdump` shows every packet they exchange. Optionally, `strace` shows every
+system call, or `gdb` steps through the code line by line. Everything runs inside one
 Linux container, so it behaves the same on Windows, macOS and Linux.
 
 ## Running
@@ -20,8 +20,15 @@ seconds. Run `docker compose build` again only if you change the `Dockerfile`.
 
 With Podman, use `podman compose run --rm lab`.
 
-`docker compose run --rm strace` starts the same lab with system call tracing.
-See [Watching system calls](#watching-system-calls-strace).
+Two more modes run the same demo with extra detail:
+
+```bash
+docker compose run --rm strace   # system calls under each socket call
+docker compose run --rm step     # the C code, line by line, as it runs
+```
+
+See [Watching system calls](#watching-system-calls-strace) and
+[Stepping through the code](#stepping-through-the-code-step).
 
 ## What you are looking at
 
@@ -166,6 +173,60 @@ strace -e trace=network,close ./server   # plain strace: networking calls + clos
 strace ./client                          # everything, including memory and file calls
 ```
 
+## Stepping through the code (step)
+
+```bash
+docker compose run --rm step
+```
+
+The server and client run under the `gdb` debugger, which executes `main()` one
+line at a time and prints each line of C code just *before* running it:
+
+```text
+│  54      printf("SERVER: calling listen()\n");
+SERVER: calling listen()
+│  55      rc = listen(listen_fd, 5);
+│  56      if (rc < 0) {
+...
+│  69          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+```
+
+The number is the line in `server.c` / `client.c`, so you can follow along in your editor.
+
+What to observe:
+
+1. **Where a program blocks.** The last line on screen is the one running *now*. When it is
+   `accept(...)` or `recv(...)` and nothing moves, the program is waiting inside that call.
+2. **Which `if` branches run.** The error branches (`if (rc < 0) {`) are checked but skipped.
+   After the client closes, the server goes through `if (n == 0)`.
+3. **The loop.** After one client, the server jumps back to `for (;;)` and stops at `accept()` again.
+4. **Both sides at once.** Watch the client's `send(...)` line and the server's `recv(...)` line
+   finish at the same moment, and the `DATA` packet appear below.
+
+Too fast or too slow? In a pane, `Ctrl-C`, then for example `STEP_DELAY=1 ./step ./client`.
+
+### Stepping yourself with gdb
+
+To control the stepping yourself, press `Ctrl-C` in the SERVER pane and run:
+
+```bash
+gdb -tui ./server
+```
+
+The top half shows the source with the current line highlighted. Useful commands:
+
+| Command      | Meaning                                       |
+|--------------|-----------------------------------------------|
+| `break main` | stop when `main()` starts                     |
+| `run`        | start the program                             |
+| `n`          | run the current line (next)                   |
+| `p listen_fd`| print a variable                              |
+| `c`          | continue until the end or a breakpoint        |
+| `q`          | quit                                          |
+
+Step over `accept()` with `n` and gdb seems to freeze. It is waiting for a client.
+Run `./client` in the CLIENT pane and watch the line complete.
+
 ## Experimenting
 
 The server keeps running and waits for the next client. In the CLIENT pane you can:
@@ -201,8 +262,9 @@ Quitting stops the container. The next `docker compose run --rm lab` starts fres
 | `server.c`    | the server                                           |
 | `client.c`    | the client                                           |
 | `Makefile`    | builds both with `-g -O0 -Wall -Wextra -Wpedantic`   |
-| `start.sh`    | builds, creates the tmux layout, starts everything (`bash start.sh strace` for strace mode) |
+| `start.sh`    | builds, creates the tmux layout, starts everything (`bash start.sh strace` / `step` for the other modes) |
 | `trace`       | runs a program under strace and highlights the system calls |
+| `step`        | runs a program under gdb, printing each line of C code as it runs |
 | `packets`     | runs tcpdump and prints one readable line per packet |
-| `Dockerfile`  | Ubuntu 24.04 with gcc, make, gdb, strace, tcpdump, tmux, iproute2 |
+| `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2 |
 | `compose.yaml`| runs the container and mounts this directory at `/lab` |

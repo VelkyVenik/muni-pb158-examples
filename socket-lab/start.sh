@@ -10,6 +10,7 @@
 #
 # Usage:  bash start.sh           the plain demo
 #         bash start.sh strace    same, with server and client under strace
+#         bash start.sh step      same, stepping through the C code line by line
 #
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -34,16 +35,22 @@ case "$MODE" in
         SERVER_TITLE="SERVER (strace)"
         CLIENT_TITLE="CLIENT (strace)"
         ;;
+    step)
+        SERVER_CMD="./step ./server"    # gdb, one line of C at a time
+        CLIENT_CMD="./step ./client"
+        SERVER_TITLE="SERVER (step)"
+        CLIENT_TITLE="CLIENT (step)"
+        ;;
     *)
-        echo "unknown mode: $MODE (use: demo, strace)" >&2
+        echo "unknown mode: $MODE (use: demo, strace, step)" >&2
         exit 1
         ;;
 esac
 
-# Wait (max 10 s) until a command succeeds. If it never does (e.g. the
-# server runs under gdb and is not listening yet), the demo just goes on.
+# Wait (max 30 s) until a command succeeds. If it never does (e.g. the
+# server is stopped in gdb), the demo just goes on.
 wait_for() {
-    for _ in $(seq 100); do
+    for _ in $(seq 300); do
         if eval "$1" >/dev/null 2>&1; then return 0; fi
         sleep 0.1
     done

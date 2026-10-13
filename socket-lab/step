@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# Run a program under gdb and step through main() one line at a time,
+# printing each line of C code just before it runs:
+#
+#   │ 27  int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+#   SERVER: socket() -> fd=3
+#
+# When a line blocks (accept, recv, ...), it stays the last line on screen
+# until the call returns.
+#
+#   usage: ./step ./server
+#          STEP_DELAY=1 ./step ./client     (seconds between lines, default 0.5)
+
+DELAY="${STEP_DELAY:-0.5}"
+
+# gdb commands: stop in main(), then "next" over and over until the program ends.
+# (disable-randomization needs a system call Docker does not allow, so turn it off.)
+COMMANDS=$(mktemp)
+trap 'rm -f "$COMMANDS"' EXIT
+cat > "$COMMANDS" <<EOF
+set debuginfod enabled off
+set pagination off
+set confirm off
+set disable-randomization off
+break main
+run
+while 1
+  next
+  shell sleep $DELAY
+end
+EOF
+
+gdb -q -batch -nx -x "$COMMANDS" "$@" 2>&1 | perl -ne '
+    BEGIN { $| = 1 }
+    if (/^(\d+)\t(.*)$/) {
+        # A line of source code, e.g. "27\t    int listen_fd = socket(...);"
+        my ($num, $code) = ($1, $2);
+        $code =~ s/\b(socket|setsockopt|bind|listen|accept|connect|getsockname|send|recv|close)\(/\e[1;33m$1\e[1;32m(/g;
+        printf "\e[1;32m│\e[0m \e[2m%3d\e[0m  \e[1;32m%s\e[0m\n", $num, $code;
+    } elsif (/^(SERVER|CLIENT|-----)/ || /^\s*$/) {
+        print;      # the program'"'"'s own output
+    }
+    # everything else is gdb chatter ("Breakpoint 1, main () at ...") - skip it
+'

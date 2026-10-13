@@ -1,4 +1,6 @@
-FROM ubuntu:24.04
+# Debian 12 rather than Ubuntu 24.04: its gdb 13 works on Apple M4/M5 Macs,
+# where gdb 15+ fails with "Unable to fetch SVE/SSVE vector length".
+FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8
