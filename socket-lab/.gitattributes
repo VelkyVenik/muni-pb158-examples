@@ -1,0 +1,2 @@
+# Keep Unix line endings on Windows checkouts, otherwise bash and make break.
+* text=auto eol=lf

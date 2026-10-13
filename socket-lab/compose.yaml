@@ -1,0 +1,23 @@
+services:
+  lab:
+    build: .
+    image: socket-lab
+    hostname: lab
+    # Your local checkout is mounted here: edit files on your machine,
+    # rebuild and rerun inside the container.
+    volumes:
+      - .:/lab
+    working_dir: /lab
+    stdin_open: true
+    tty: true
+    # Reaps background processes started by start.sh.
+    init: true
+    # tcpdump needs raw packet sockets. Nothing else is required.
+    cap_add:
+      - NET_RAW
+    command: ["bash", "start.sh"]
+
+  # The same lab, with server and client running under strace.
+  strace:
+    extends: lab
+    command: ["bash", "start.sh", "strace"]
