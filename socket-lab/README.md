@@ -181,18 +181,23 @@ docker compose run --rm step
 ```
 
 The server and client run under the `gdb` debugger, which executes `main()` one
-line at a time and prints each line of C code just *before* running it:
+line at a time and prints each line of C code just *before* running it, together
+with the comment above it (in grey):
 
 ```text
-│  54      printf("SERVER: calling listen()\n");
+│          /* 3. listen() turns it into a listening socket. From now on the kernel
+│           *    does the TCP handshake with clients by itself and queues finished
+│           *    connections (up to 5 here) until we accept() them. */
+│  60      printf("SERVER: calling listen()\n");
 SERVER: calling listen()
-│  55      rc = listen(listen_fd, 5);
-│  56      if (rc < 0) {
+│  61      rc = listen(listen_fd, 5);
+│  62      if (rc < 0) {
 ...
-│  69          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+│  77          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
 ```
 
 The number is the line in `server.c` / `client.c`, so you can follow along in your editor.
+The comments come straight from the source: edit a comment, and the demo shows your text.
 
 What to observe:
 
@@ -215,9 +220,9 @@ docker compose run --rm step_strace
 Same as `step`, plus the system calls each line makes, right below it:
 
 ```text
-│  69          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+│  77          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
       ↳ accept(3, 127.0.0.1:56042) = 4
-│  83          ssize_t n = recv(conn_fd, buf, sizeof(buf) - 1, 0);
+│  93          ssize_t n = recv(conn_fd, buf, sizeof(buf) - 1, 0);
       ↳ recvfrom(4, "Hello server!", 1023) = 13
 ```
 

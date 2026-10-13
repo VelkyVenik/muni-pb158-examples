@@ -22,7 +22,9 @@ int main(void)
     /* Print immediately, even when stdout is not a terminal. */
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    /* 1. Create a socket. The kernel returns a new file descriptor. */
+    /* 1. socket() asks the kernel for a new TCP endpoint. Nothing is
+     *    sent yet. It returns a file descriptor: the lowest free number
+     *    (0, 1 and 2 are already stdin, stdout and stderr). */
     printf("SERVER: calling socket()\n");
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd < 0) {
@@ -31,11 +33,13 @@ int main(void)
     }
     printf("SERVER: socket() -> fd=%d\n\n", listen_fd);
 
-    /* Allow restarting the server right away without "Address already in use". */
+    /* Lets us restart the server right away. Without it, bind() can fail
+     * with "Address already in use" for a while after a restart. */
     int yes = 1;
     setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
-    /* 2. Bind the socket to 127.0.0.1:8080. */
+    /* 2. bind() gives the socket an address: 127.0.0.1, port 8080.
+     *    Clients will connect to it. Still no packets. */
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -50,7 +54,9 @@ int main(void)
     }
     printf("SERVER: bind() -> %d\n\n", rc);
 
-    /* 3. Mark the socket as passive: it will accept incoming connections. */
+    /* 3. listen() turns it into a listening socket. From now on the kernel
+     *    does the TCP handshake with clients by itself and queues finished
+     *    connections (up to 5 here) until we accept() them. */
     printf("SERVER: calling listen()\n");
     rc = listen(listen_fd, 5);
     if (rc < 0) {
@@ -61,7 +67,9 @@ int main(void)
 
     /* Serve clients one after another, forever (stop with Ctrl-C). */
     for (;;) {
-        /* 4. Wait for a client. accept() BLOCKS until someone connects. */
+        /* 4. accept() takes the next connection from the kernel's queue.
+         *    If there is none yet, it BLOCKS until a client connects.
+         *    It returns a NEW fd for this one connection. */
         printf("SERVER: calling accept()\n");
         printf("SERVER: waiting for connection...\n");
         struct sockaddr_in client_addr;
@@ -76,7 +84,9 @@ int main(void)
                inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
         printf("SERVER: listening socket is still fd=%d\n\n", listen_fd);
 
-        /* 5. Read the client's message. recv() BLOCKS until data arrives. */
+        /* 5. recv() copies data the kernel has already received into buf.
+         *    If nothing has arrived yet, it BLOCKS. It returns the number of
+         *    bytes, or 0 when the client has closed the connection. */
         char buf[BUF_SIZE];
         printf("SERVER: calling recv() on fd=%d\n", conn_fd);
         printf("SERVER: waiting for data...\n");
@@ -99,7 +109,8 @@ int main(void)
         printf("SERVER: sleeping %d s before replying...\n\n", DELAY_SECONDS);
         sleep(DELAY_SECONDS);
 
-        /* 6. Send a reply back on the same connected socket. */
+        /* 6. send() hands the reply to the kernel, which sends it to the
+         *    client as a TCP packet. It returns how many bytes it took. */
         const char *reply = "Hello client!";
         printf("SERVER: calling send() on fd=%d\n", conn_fd);
         printf("SERVER: sending \"%s\"\n", reply);
@@ -111,7 +122,8 @@ int main(void)
         }
         printf("SERVER: send() -> %zd bytes\n\n", n);
 
-        /* 7. Wait for the client to hang up. recv() returns 0 on close. */
+        /* 7. Wait for the client to hang up: recv() BLOCKS again and returns
+         *    0 when the client's FIN arrives (the connection is closed). */
         printf("SERVER: calling recv() on fd=%d\n", conn_fd);
         printf("SERVER: waiting for client to close...\n");
         n = recv(conn_fd, buf, sizeof(buf) - 1, 0);
@@ -120,7 +132,8 @@ int main(void)
         else
             printf("SERVER: recv() -> %zd\n\n", n);
 
-        /* 8. Close our end of the connection. listen_fd stays open. */
+        /* 8. close() frees the fd and sends our FIN. The listening socket
+         *    (listen_fd) stays open for the next client. */
         printf("SERVER: calling close(fd=%d)\n", conn_fd);
         rc = close(conn_fd);
         printf("SERVER: close() -> %d\n\n", rc);

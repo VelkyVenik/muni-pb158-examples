@@ -22,7 +22,9 @@ int main(void)
     /* Print immediately, even when stdout is not a terminal. */
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    /* 1. Create a socket. The kernel returns a new file descriptor. */
+    /* 1. socket() asks the kernel for a new TCP endpoint. Nothing is
+     *    sent yet. It returns a file descriptor: the lowest free number
+     *    (0, 1 and 2 are already stdin, stdout and stderr). */
     printf("CLIENT: calling socket()\n");
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
@@ -31,7 +33,9 @@ int main(void)
     }
     printf("CLIENT: socket() -> fd=%d\n\n", fd);
 
-    /* 2. Connect to the server. This performs the TCP three-way handshake. */
+    /* 2. connect() makes the kernel do the TCP three-way handshake with
+     *    the server (SYN, SYN-ACK, ACK). It BLOCKS until that is done, or
+     *    fails if nobody is listening on the port. */
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -46,7 +50,8 @@ int main(void)
     }
     printf("CLIENT: connect() -> %d\n", rc);
 
-    /* The kernel picked a random local port for us. Look for it in tcpdump. */
+    /* getsockname() asks which address the kernel gave our end: our IP
+     * and a random free port. Look for that port in the packets. */
     struct sockaddr_in local;
     socklen_t local_len = sizeof(local);
     getsockname(fd, (struct sockaddr *)&local, &local_len);
@@ -57,7 +62,8 @@ int main(void)
     printf("CLIENT: sleeping %d s before sending...\n\n", DELAY_SECONDS);
     sleep(DELAY_SECONDS);
 
-    /* 3. Send a message. */
+    /* 3. send() hands the message to the kernel, which sends it to the
+     *    server as a TCP packet. It returns how many bytes it took. */
     const char *msg = "Hello server!";
     printf("CLIENT: calling send()\n");
     printf("CLIENT: sending \"%s\"\n", msg);
@@ -68,7 +74,8 @@ int main(void)
     }
     printf("CLIENT: send() -> %zd bytes\n\n", n);
 
-    /* 4. Wait for the reply. recv() BLOCKS until data arrives. */
+    /* 4. recv() waits for the server's reply. It BLOCKS until data
+     *    arrives, then returns the number of bytes copied into buf. */
     char buf[BUF_SIZE];
     printf("CLIENT: calling recv()\n");
     printf("CLIENT: waiting for response...\n");
@@ -81,7 +88,7 @@ int main(void)
     printf("CLIENT: recv() -> %zd bytes\n", n);
     printf("CLIENT: received: \"%s\"\n\n", buf);
 
-    /* 5. Close the connection. This sends a FIN to the server. */
+    /* 5. close() frees the fd and sends a FIN to the server: "I am done". */
     printf("CLIENT: calling close(fd=%d)\n", fd);
     rc = close(fd);
     printf("CLIENT: close() -> %d\n", rc);

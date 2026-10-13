@@ -3,7 +3,7 @@
 # Run a program under gdb and step through main() one line at a time,
 # printing each line of C just before it runs:
 #
-#   │  27      int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+#   │  29      int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 #   SERVER: socket() -> fd=3
 #
 # When a line blocks (accept, recv, ...), it stays the last line on screen

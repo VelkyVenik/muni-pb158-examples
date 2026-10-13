@@ -2,7 +2,7 @@
 #
 # Like ./step, but also shows the socket system calls each line makes:
 #
-#   │  27      int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+#   │  29      int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 #         ↳ socket(AF_INET, SOCK_STREAM, 0) = 3
 #   SERVER: socket() -> fd=3
 #

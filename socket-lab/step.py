@@ -1,10 +1,14 @@
 # step.py - loaded into gdb by ./step and ./step_strace (gdb has Python built in).
 #
 # Steps through main() one line at a time and prints each line of C just
-# before it runs. With STEP_SYSCALLS=1 (./step_strace) it also prints the
-# socket system calls each line makes, much like strace does:
+# before it runs, together with the comment above it. With STEP_SYSCALLS=1
+# (./step_strace) it also prints the socket system calls each line makes,
+# much like strace does:
 #
-#   │  69          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+#   │      /* 4. accept() takes the next connection from the kernel's queue.
+#   │  73          printf("SERVER: calling accept()\n");
+#   ...
+#   │  77          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
 #         ↳ accept(3, 127.0.0.1:56042) = 4
 #
 # Why not simply run strace as well? A process can only be traced by one
@@ -28,6 +32,7 @@ INT_RESULT = {"sendto": False, "recvfrom": False}      # these return ssize_t, t
 BAR = "\033[1;32m│\033[0m"
 NUM, CODE, NAME, DATA, OK, ERR, OFF = (
     "\033[2m", "\033[1;32m", "\033[1;33m", "\033[1;35m", "\033[1;32m", "\033[1;31m", "\033[0m")
+NOTE = "\033[2;3m"     # comments: dim italic
 
 # gdb prints a lot of its own messages ("Breakpoint 1, main () at ...").
 # Send all of gdb's output to /dev/null and write ours to the terminal
@@ -170,12 +175,73 @@ def on_exit(event):
 source_files = {}
 
 
-def source_line(sal):
-    path = sal.symtab.fullname()
+def source(symtab):
+    path = symtab.fullname()
     if path not in source_files:
         with open(path) as f:
             source_files[path] = f.read().split("\n")
-    return source_files[path][sal.line - 1]
+    return source_files[path]
+
+
+def is_comment(text):
+    stripped = text.strip()
+    return stripped.startswith(("/*", "*", "//")) or stripped.endswith("*/")
+
+
+def indent(text):
+    return len(text) - len(text.lstrip())
+
+
+previous_line = [None]  # line shown last
+
+
+def comment_above(sal):
+    """Line numbers of the comments to show before this line of code."""
+    lines, table = source(sal.symtab), sal.symtab.linetable()
+    here, before = sal.line, previous_line[0]
+    previous_line[0] = here
+    if before is not None and before < here:
+        # Moving forward: comments between the previous line and this one.
+        # Skip the ones indented deeper than this line: they belong to a
+        # block that was jumped over (e.g. an "if" that was not taken).
+        return [n for n in range(before + 1, here)
+                if is_comment(lines[n - 1]) and indent(lines[n - 1]) <= indent(lines[here - 1]) + 1]
+    # First line, or jumping back (a loop): the comment directly above,
+    # up to the previous line that has code.
+    found = []
+    number = here - 1
+    while number >= 1 and not table.has_line(number):
+        if is_comment(lines[number - 1]):
+            found.insert(0, number)
+        number -= 1
+    return found
+
+
+def split_comment(code):
+    """Split 'buf[n] = 0; /* note */' into code and its trailing comment."""
+    in_string = False
+    for i, c in enumerate(code):
+        if c == '"' and code[i - 1:i] != "\\":
+            in_string = not in_string
+        elif not in_string and code.startswith(("/*", "//"), i):
+            return code[:i], code[i:]
+    return code, ""
+
+
+last_comment = []    # first line of the comment shown last
+
+
+def show_line(sal):
+    lines = source(sal.symtab)
+    comment = comment_above(sal)
+    if comment and comment[:1] != last_comment:
+        last_comment[:] = comment[:1]
+        for number in comment:
+            say("%s      %s%s%s\n" % (BAR, NOTE, lines[number - 1], OFF))
+        time.sleep(DELAY * len(comment))     # time to read it
+    code, note = split_comment(lines[sal.line - 1])
+    note = NOTE + note + OFF if note else ""
+    say("%s %s%3d%s  %s%s%s%s\n" % (BAR, NUM, sal.line, OFF, CODE, code, OFF, note))
 
 
 for setting in ["debuginfod enabled off", "pagination off", "confirm off",
@@ -201,7 +267,7 @@ try:
         if not (sal.symtab and sal.line):
             run("continue")      # main() has returned: let the program finish
             continue
-        say("%s %s%3d%s  %s%s%s\n" % (BAR, NUM, sal.line, OFF, CODE, source_line(sal), OFF))
+        show_line(sal)
         time.sleep(DELAY)
         last_stop.clear()
         run("next")
