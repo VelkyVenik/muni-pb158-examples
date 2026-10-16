@@ -486,6 +486,7 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `docker is installed but not running` | Start Docker Desktop and wait until it says it is running. Linux: `sudo systemctl start docker`. |
 | `podman is installed but not running` | macOS/Windows: `podman machine start` (the very first time `podman machine init` first). |
 | `permission denied ... docker.sock` (Linux) | Add yourself to the `docker` group ([how](https://docs.docker.com/engine/install/linux-postinstall/)), then log out and in. |
+| Linux + Podman: `podman compose` fails with "Cannot connect" | Install `podman-compose` (the script then uses it), or start Podman's socket: `systemctl --user enable --now podman.socket`. |
 | `compose is missing` | Docker: install the [Compose plugin](https://docs.docker.com/compose/install/) (Docker Desktop has it). Podman: install `podman-compose`. |
 | `cannot run a container` | Usually no internet for downloading the test image, or not enough disk space. The script shows the error. |
 | `Permission denied` on SELinux systems (Fedora, RHEL) | `compose.yaml` already sets `label=disable`. If you start the container another way, add `--security-opt label=disable`. |
