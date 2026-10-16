@@ -2,3 +2,5 @@ server
 client
 # macOS debug symbols, if someone runs make outside the container
 *.dSYM/
+# the zip for students, built with git archive (see CLAUDE.md)
+socket-lab.zip

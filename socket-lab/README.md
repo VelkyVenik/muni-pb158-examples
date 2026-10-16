@@ -16,17 +16,25 @@ macOS and Linux, and you cannot break anything on your own computer.
 
 You need **Docker** or **Podman**, either one. The lab works the same with both.
 
-With git:
+1. Download **`socket-lab.zip`** from the course page in IS.
+2. Unzip it **somewhere inside your home folder**, e.g. into `Documents`. You get a folder
+   called `socket-lab`. (With Lima, the lab cannot see folders outside your home folder.)
+3. Open a terminal **in that folder**:
+   - **macOS:** open Terminal, type `cd ` (with a space), drag the `socket-lab` folder into
+     the Terminal window and press Enter.
+   - **Windows:** open the `socket-lab` folder in Explorer, right-click an empty spot and choose
+     **Open in Terminal** (Windows 10: hold Shift, right-click, **Open PowerShell window here**).
+   - **Linux:** right-click the folder and choose **Open in Terminal**, or `cd ~/Documents/socket-lab`.
+
+   (`cd` means "change directory". `ls` on macOS/Linux or `dir` on Windows should now list
+   `lab.sh`, `lab.cmd` and `README.md`.)
+
+Or with git:
 
 ```bash
 git clone https://github.com/VelkyVenik/muni-pb158-examples.git
 cd muni-pb158-examples/socket-lab
 ```
-
-Without git: on the [GitHub page](https://github.com/VelkyVenik/muni-pb158-examples)
-click **Code → Download ZIP**, unzip it, and in the terminal `cd` into the
-`socket-lab` folder inside it. (`cd` means "change directory". Tip: type `cd `
-and drag the folder into the terminal window.)
 
 ## 2. Start the lab
 

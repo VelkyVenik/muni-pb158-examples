@@ -34,6 +34,11 @@ containers). README.md is the student-facing manual.
 - README line-number examples (`│  77 ...`) must match `server.c`/`client.c` after edits.
 - Every predicted outcome in README "Experiments" must be verified in the container.
 
+## Distribution
+- Students get `socket-lab.zip` from IS. Build it from the repo root (commit first; HEAD + path,
+  not `HEAD:socket-lab`, or the folder's .gitattributes — CRLF, export-ignore — are not applied):
+  `git archive --format=zip -o socket-lab.zip HEAD socket-lab`
+
 ## Testing (podman/docker via Lima on the maintainer's Mac; students use Lima too)
 - Stock Lima templates share `~` read-only and nothing outside `~` (Lima ≥ 2.0).
 - Headless: `docker run --rm --init --cap-add NET_RAW -v "$PWD":/lab -w /lab socket-lab bash -c '...'`.

@@ -3,3 +3,7 @@
 # Windows scripts need Windows line endings, or cmd.exe misreads them.
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+# Not needed in the downloadable socket-lab.zip (git archive leaves these out).
+CLAUDE.md export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
