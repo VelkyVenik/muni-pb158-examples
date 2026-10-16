@@ -6,7 +6,8 @@
 #   1. it is installed,
 #   2. it is running,
 #   3. it can run a container (the tiny "hello-world" test image),
-#   4. it has "compose",
+#   4. it can see this folder (macOS may not let it into iCloud Drive, ...),
+#   5. it has "compose",
 #
 # and then runs:   <engine> compose build lab      (quick when nothing changed)
 #                  <engine> compose run --rm <mode>
@@ -118,6 +119,21 @@ check() {
         return 1
     fi
     ok "can run containers"
+
+    # The lab folder is shared with the container. Lima can only share folders
+    # in your home folder, and macOS may keep it out of some of them (iCloud
+    # Drive, sometimes Desktop/Documents/Downloads).
+    if ! out=$("$engine" run --rm -v "$PWD":/lab:ro docker.io/library/hello-world 2>&1); then
+        fail "$engine cannot open this folder"
+        local where=""
+        [[ "$PWD" == *"/Library/Mobile Documents/"* ]] && where=" It is in iCloud Drive."
+        REASON="$engine cannot open this folder: $PWD.$where
+        Move the socket-lab folder directly into your home folder (e.g. ~/socket-lab),
+        not into iCloud Drive, Desktop, Documents or Downloads, and start it there.
+        (The error was: $(echo "$out" | tail -1))"
+        return 1
+    fi
+    ok "can see this folder"
 
     # Podman: prefer podman-compose. "podman compose" may hand over to
     # docker-compose, which on Linux needs the Podman socket service.

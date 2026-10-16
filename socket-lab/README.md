@@ -17,14 +17,17 @@ macOS and Linux, and you cannot break anything on your own computer.
 You need **Docker** or **Podman**, either one. The lab works the same with both.
 
 1. Download **`socket-lab.zip`** from the course page in IS.
-2. Unzip it **somewhere inside your home folder**, e.g. into `Documents`. You get a folder
-   called `socket-lab`. (With Lima, the lab cannot see folders outside your home folder.)
+2. Unzip it and put the `socket-lab` folder **directly into your home folder**, so that it is
+   `~/socket-lab` (Windows: `C:\Users\<you>\socket-lab`).
+   **Not** into iCloud Drive, Desktop, Documents or Downloads: the container may not be
+   allowed to open those (macOS protects them, and Lima only sees your home folder).
+   - **macOS:** in Finder, choose **Go → Home** (Shift-Cmd-H) and drag the folder there.
+   - **Windows / Linux:** move it into the folder with your user name.
 3. Open a terminal **in that folder**:
-   - **macOS:** open Terminal, type `cd ` (with a space), drag the `socket-lab` folder into
-     the Terminal window and press Enter.
+   - **macOS:** open Terminal and type `cd ~/socket-lab`, then Enter.
    - **Windows:** open the `socket-lab` folder in Explorer, right-click an empty spot and choose
      **Open in Terminal** (Windows 10: hold Shift, right-click, **Open PowerShell window here**).
-   - **Linux:** right-click the folder and choose **Open in Terminal**, or `cd ~/Documents/socket-lab`.
+   - **Linux:** `cd ~/socket-lab`.
 
    (`cd` means "change directory". `ls` on macOS/Linux or `dir` on Windows should now list
    `lab.sh`, `lab.cmd` and `README.md`.)
@@ -48,14 +51,15 @@ From the `socket-lab` folder:
 
 The script finds a container engine that works on your computer: **Podman first, then
 Docker**. It checks that the engine is installed, that it is running (for example in
-your Lima VM), that it can run a test container (`hello-world`) and that it has
-`compose`. Then it asks which part of the lab to start:
+your Lima VM), that it can run a test container (`hello-world`), that the container can
+open the `socket-lab` folder, and that it has `compose`. Then it asks which part of the lab to start:
 
 ```text
 Checking podman...
   OK    installed
   OK    running
   OK    can run containers
+  OK    can see this folder
   OK    compose (podman-compose)
 
 Which part of the lab do you want to start?
@@ -537,6 +541,7 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `This is Git Bash...` / `the input device is not a TTY` | Git Bash cannot run the lab. Use PowerShell or Windows Terminal and `.\lab.cmd`. |
 | `docker is installed but not running` | Lima: `limactl start <name>`, and check that your docker context points to it (`docker context ls`). Docker Desktop: start it. Linux: `sudo systemctl start docker`. |
 | `podman is installed but not running` | Lima: `limactl list` shows your VMs, start yours with `limactl start <name>`. Podman Desktop / podman machine: `podman machine start`. |
+| `cannot open this folder` | Move the `socket-lab` folder directly into your home folder (`~/socket-lab`), out of iCloud Drive, Desktop, Documents or Downloads, and start it again from there. |
 | `error while creating mount source path`, `statfs ...: no such file or directory` or `bash: start.sh: No such file or directory` | The container cannot see your folder. With Lima, move `socket-lab` into your home folder (`./lab.sh` warns about this). |
 | `permission denied ... docker.sock` (Linux) | Add yourself to the `docker` group ([how](https://docs.docker.com/engine/install/linux-postinstall/)), then log out and in. |
 | Linux + Podman: `podman compose` fails with "Cannot connect" | Install `podman-compose` (the script then uses it), or start Podman's socket: `systemctl --user enable --now podman.socket`. |

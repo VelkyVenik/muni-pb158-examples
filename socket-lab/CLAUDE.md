@@ -41,7 +41,8 @@ containers). README.md is the student-facing manual.
   `git archive --format=zip -o socket-lab.zip HEAD socket-lab`
 
 ## Testing (podman/docker via Lima on the maintainer's Mac; students use Lima too)
-- Stock Lima templates share `~` read-only and nothing outside `~` (Lima ≥ 2.0).
+- Stock Lima templates share `~` read-only and nothing outside `~` (Lima ≥ 2.0). iCloud Drive
+  (~/Library/Mobile Documents) fails with statfs EPERM (macOS TCC); lab.sh checks folder visibility.
 - Headless: `docker run --rm --init --cap-add NET_RAW -v "$PWD":/lab -w /lab socket-lab bash -c '...'`.
 - Real path: `docker run -dit ... bash start.sh <mode>`, then `docker exec <c> tmux capture-pane -p -t lab:0.<n>`.
 - Background jobs ignore SIGINT in non-interactive bash: use `kill` (TERM) to simulate Ctrl-C.
