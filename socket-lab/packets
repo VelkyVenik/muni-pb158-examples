@@ -33,9 +33,12 @@ tcpdump -i lo -nn -l --immediate-mode -tt -x "tcp port $PORT" 2>&1 | PORT="$PORT
         paint($p == $port ? "1;34" : "1;32", $label);
     }
 
-    # Turn tcpdump flags ([S], [S.], [P.], [F.], [R], [.]) into names.
+    # Turn tcpdump flags ([S], [S.], [P.], [F.], [R], [.]) into names. The
+    # colours are the same as for the system calls in the SERVER/CLIENT panes:
+    # yellow = connection setup, magenta = data to the server,
+    # cyan = data to the client, red = closing, grey = only an acknowledgement.
     sub kind {
-        my ($flags, $len) = @_;
+        my ($flags, $len, $from) = @_;
         my @k;
         push @k, ($flags =~ /\./ ? "SYN-ACK" : "SYN") if $flags =~ /S/;
         push @k, "RST"  if $flags =~ /R/;
@@ -43,12 +46,12 @@ tcpdump -i lo -nn -l --immediate-mode -tt -x "tcp port $PORT" 2>&1 | PORT="$PORT
         push @k, "FIN"  if $flags =~ /F/;
         @k = ("ACK") unless @k;
         my $k = join "+", @k;
-        my $colour = $k =~ /RST/ ? "1;31" : $k =~ /DATA/ ? "1;35"
+        my $colour = $k =~ /RST/ ? "1;31" : $k =~ /DATA/ ? ($from == $port ? "1;36" : "1;35")
                    : $k =~ /SYN/ ? "1;33" : $k =~ /FIN/ ? "1;31" : "2";
         paint($colour, sprintf "%-8s", $k);
     }
 
-    my ($pending, $len, $need, @bytes);
+    my ($pending, $len, $need, $data_colour, @bytes);
     while (<STDIN>) {
         # Packet line, e.g.
         #  1792163391.135803 IP 127.0.0.1.59456 > 127.0.0.1.8080: Flags [P.], seq 1:14, ..., length 13: HTTP
@@ -60,9 +63,10 @@ tcpdump -i lo -nn -l --immediate-mode -tt -x "tcp port $PORT" 2>&1 | PORT="$PORT
             my $time = sprintf "%8.3f  %s", $t - $t0,
                 paint($gap >= 0.5 ? "1" : "2", sprintf "%8s", sprintf "+%.3fs", $gap);
             my $line = sprintf "%s  %s \xe2\x86\x92 %s  %s  %-3d",
-                $time, who($from), who($to), kind($flags, $bytes), $bytes;
+                $time, who($from), who($to), kind($flags, $bytes, $from), $bytes;
             if ($bytes > 0) {
                 ($pending, $len, $need, @bytes) = ($line, $bytes, undef);   # wait for the data
+                $data_colour = $from == $port ? "1;36" : "1;35";
             } else {
                 print "$line\n";
                 $pending = undef;
@@ -80,7 +84,7 @@ tcpdump -i lo -nn -l --immediate-mode -tt -x "tcp port $PORT" 2>&1 | PORT="$PORT
                 $data =~ s/\n/\\n/g;
                 $data =~ s/([^\x20-\x7e])/sprintf "\\x%02x", ord $1/ge;
                 $data = substr($data, 0, 40) . "..." if length $data > 40;
-                print "$pending  ", paint("1;35", "\"$data\""), "\n";
+                print "$pending  ", paint($data_colour, "\"$data\""), "\n";
                 $pending = undef;
             }
             next;

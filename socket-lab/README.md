@@ -119,13 +119,42 @@ PACKETS pane:  6.127   +0.000s  CLIENT:43420 → SERVER:8080   SYN       0
 The time is when the line *started*. For a call that blocks, like `accept(3, `, that is
 when the program went into it. The program's next line shows when it came back.
 
+**The colours show what belongs together.** System calls (in the SERVER and CLIENT panes)
+and packets get the same colour when they are part of the same step of the conversation.
+The legend is in the bottom bar:
+
+| Colour  | Part of            | System calls                                     | Packets |
+|---------|--------------------|--------------------------------------------------|---------|
+| yellow  | connection setup   | client `connect()`, server `accept()`            | `SYN`, `SYN-ACK` |
+| magenta | data to the server | client `sendto()`, server `recvfrom()`           | `DATA` client→server |
+| cyan    | data to the client | server `sendto()`, client `recvfrom()`           | `DATA` server→client |
+| red     | closing            | `close()` of a socket, `recvfrom()` returning `0`, errors | `FIN`, `RST` |
+| grey    | no packet          | `socket()`, `bind()`, `listen()`, `setsockopt()`, `getsockname()`, other `close()`s | `ACK`s |
+
+So a magenta `sendto(3, "Hello server!", ...)` in the client, the magenta `DATA` packet and
+the magenta `recvfrom(4, "Hello server!", ...)` in the server are one and the same message.
+"Part of" is not "sends": `accept()` and `recvfrom()` put nothing on the wire (see
+[Reading the packets](#reading-the-packets)), they only pick up what the kernel has already received.
+
+**The open file descriptors are listed** after every call that changes them:
+
+```text
+   4.049 │ listen(3, 5)                            = 0
+   4.049   open fds: 3 = listening on :8080
+   4.049 │ accept(3, {sa_family=AF_INET, sin_port=htons(43420), ...}, [16]) = 4
+   7.128   open fds: 3 = listening on :8080, 4 = connected to :43420
+```
+
+The server has **two** sockets while it talks to a client: fd 3 only waits for new clients,
+fd 4 is the connection to this one client. After the client leaves, `close(4)` and only fd 3 is left.
+
 ## What to observe
 
 Keep `server.c` and `client.c` open next to the demo.
 
 1. **`socket()` returns a file descriptor.** It is usually `fd=3`. Why not 0, 1 or 2?
-2. **`accept()` returns a *new* fd** (`fd=4`). The listening socket (`fd=3`) stays open for the next client.
-   Which fd do the server's `recv()` and `send()` use?
+2. **`accept()` returns a *new* fd** (`fd=4`). The listening socket (`fd=3`) stays open for the next client:
+   the `open fds:` line shows both. Which fd do the server's `recv()` and `send()` use?
 3. **`accept()` blocks.** The server sits at `waiting for connection...` until the client starts.
 4. **`recv()` blocks.** The server waits for data while the client sleeps. Later the client waits while the server sleeps.
    The packet pane shows these as long gaps in the `GAP` column.

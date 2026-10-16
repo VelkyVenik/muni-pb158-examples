@@ -108,6 +108,11 @@ tmux set -g history-limit 10000
 tmux set -g pane-border-status top
 tmux set -g pane-border-format ' #{@title} '
 tmux set -g status-right ' Ctrl-b d: quit '
+# The colour legend, for all panes: what a system call or packet is part of.
+tmux set -g window-status-format ''
+tmux set -g window-status-current-format ''
+tmux set -g status-left-length 100
+tmux set -g status-left '#[fg=yellow,bold] setup #[fg=magenta]data→server #[fg=cyan]data→client #[fg=red]closing #[fg=white,nobold,dim]no packet #[default]'
 tmux set -p -t "$server"  @title "$SERVER_TITLE"
 tmux set -p -t "$client"  @title "$CLIENT_TITLE"
 tmux set -p -t "$tcpdump" @title 'PACKETS (tcpdump on lo, port 8080)'

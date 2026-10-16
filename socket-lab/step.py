@@ -40,9 +40,17 @@ SYSCALLS = ["socket", "setsockopt", "bind", "listen", "accept", "accept4",
             "connect", "getsockname", "sendto", "recvfrom", "close", "dup"]
 
 BAR = "\033[1;32m│\033[0m"
-NUM, CODE, NAME, DATA, OK, ERR, OFF = (
-    "\033[2m", "\033[1;32m", "\033[1;33m", "\033[1;35m", "\033[1;32m", "\033[1;31m", "\033[0m")
+NUM, CODE, ERR, OFF = "\033[2m", "\033[1;32m", "\033[1;31m", "\033[0m"
 NOTE = "\033[2;3m"     # comments: dim italic
+BOLD, NOBOLD = "\033[1m", "\033[22m"
+
+# System calls are coloured by what they have to do with the packets, the
+# same colours as in the PACKETS pane (and in ./trace).
+COLOUR = {"setup": "33",        # yellow:  connect(), accept()
+          "to_server": "35",    # magenta: data to the server
+          "to_client": "36",    # cyan:    data to the client
+          "closing": "31",      # red:     close() of a socket, recv() = 0
+          "local": "2"}         # grey:    nothing on the wire
 
 # gdb prints a lot of its own messages ("Breakpoint 1, main () at ...").
 # Send all of gdb's output to /dev/null and write ours to the terminal
@@ -92,7 +100,7 @@ def text(address, size):
     data = memory(address, min(size, 40))
     shown = "".join(chr(b) if 32 <= b < 127 else "\\n" if b == 10 else "\\x%02x" % b
                     for b in data)
-    return DATA + '"' + shown + '"' + ("..." if size > 40 else "") + OFF
+    return BOLD + '"' + shown + '"' + ("..." if size > 40 else "") + NOBOLD
 
 
 def address(pointer):
@@ -106,6 +114,53 @@ def address(pointer):
 
 
 # --- printing one system call -------------------------------------------------
+
+sockets = {}    # open sockets: fd -> what it is ("listening on :8080", ...)
+side = {}       # fd -> "client" (it called connect) or "server" (it came from accept)
+
+
+def category(name, fd):
+    """Which colour a call gets, decided when it starts."""
+    if name in ("connect", "accept", "accept4"):
+        return "setup"
+    if name == "sendto":
+        return "to_client" if side.get(fd) == "server" else "to_server"
+    if name == "recvfrom":
+        return "to_server" if side.get(fd) == "server" else "to_client"
+    if name == "close" and fd in sockets:
+        return "closing"
+    return "local"
+
+
+def track(name, a, result):
+    """Update the list of open sockets after a call. True if it changed."""
+    fd = a[0]
+    if result < 0:
+        return False
+    if name == "socket":
+        sockets[result] = "new socket"
+    elif name == "bind" and fd in sockets:
+        sockets[fd] = "bound to :" + address(a[1]).split(":")[-1]
+    elif name == "listen" and fd in sockets:
+        port = sockets[fd].split(":")[-1] if ":" in sockets[fd] else ""
+        sockets[fd] = "listening" + (" on :" + port if port else "")
+    elif name == "connect" and fd in sockets:
+        sockets[fd] = "connected to :" + address(a[1]).split(":")[-1]
+        side[fd] = "client"
+    elif name in ("accept", "accept4"):
+        sockets[result] = "connected to :" + address(a[1]).split(":")[-1]
+        side[result] = "server"
+    elif name == "close" and fd in sockets:
+        del sockets[fd]
+        side.pop(fd, None)
+    else:
+        return False
+    return True
+
+
+def fd_list():
+    listed = ", ".join("%d = %s" % (fd, sockets[fd]) for fd in sorted(sockets))
+    return "%s        open fds: %s%s\n" % (NUM, listed or "none", OFF)
 
 def args_at_entry(name, a):
     """Arguments we can show when the call starts."""
@@ -141,8 +196,10 @@ def show_syscall(name):
     """Called when the program enters a system call: print it, let it finish, print the result."""
     arg_regs, result_reg = registers()
     a = [register(r) for r in arg_regs]
+    colour = "\033[%sm" % COLOUR[category(name, a[0])]
+    bold = "" if colour == "\033[2m" else BOLD        # grey lines stay plain
     # No newline yet: if the call blocks, this unfinished line stays on screen.
-    say("      ↳ %s%s%s(%s" % (NAME, name, OFF, args_at_entry(name, a)))
+    say("      ↳ %s%s%s%s(%s" % (colour, bold, name, NOBOLD + colour, args_at_entry(name, a)))
 
     # "catch syscall" stops the program twice: when it enters the kernel
     # (now) and when the kernel returns. Run until that return.
@@ -154,12 +211,16 @@ def show_syscall(name):
     # The kernel's own result: 0 or more on success, minus an errno code on
     # failure (the C library turns that into -1 and sets errno).
     result = signed(register(result_reg))
-    if result >= 0:
-        shown = OK + str(result) + OFF
-    else:
+    if result < 0:
         code = -result
-        shown = ERR + "-1 %s (%s)" % (errno.errorcode.get(code, code), os.strerror(code)) + OFF
-    say("%s) = %s\n" % (args_at_return(name, a, result), shown))
+        shown = ERR + "-1 %s (%s)" % (errno.errorcode.get(code, code), os.strerror(code))
+    elif result == 0 and name == "recvfrom":
+        shown = ERR + "0"                               # the other side has closed
+    else:
+        shown = bold + str(result)
+    say("%s) = %s%s\n" % (args_at_return(name, a, result), shown, OFF))
+    if track(name, a, result):
+        say(fd_list())
 
 
 def back_to_main():

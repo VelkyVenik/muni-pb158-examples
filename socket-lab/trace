@@ -32,32 +32,57 @@ fi
 # Program output and strace output go through ONE pipe, so their order is
 # preserved. The filter works on raw chunks, not whole lines, so an
 # unfinished call like "accept(3, " shows up while the program is blocked.
+#
+# Colours: what a call has to do with the packets (the same as ./packets):
+#   yellow   connection setup      connect(), accept()
+#   magenta  data to the server    send/recv of "Hello server!"
+#   cyan     data to the client    send/recv of "Hello client!"
+#   red      closing               close() of a socket, recv() = 0, errors
+#   grey     nothing on the wire   socket(), bind(), listen(), ...
+# After every call that changes them, the open sockets are listed:
+#   open fds: 3 = listening on :8080, 4 = connected to :43420
 strace -e trace="$SYSCALLS" ${SLOW_MOTION[@]+"${SLOW_MOTION[@]}"} -e signal=none "$@" 2>&1 | perl -e '
     $| = 1;
-    my $BAR  = "\e[1;33m│\e[0m ";
-    my $NAME = "\e[1;33m";    # syscall name: bold yellow
-    my $ARGS = "\e[0;36m";    # arguments: cyan
-    my $DATA = "\e[1;35m";    # "strings": bold magenta
-    my $OK   = "\e[1;32m";    # return value: bold green
-    my $ERR  = "\e[1;31m";    # error: bold red
-    my $OFF  = "\e[0m";
+    my %COLOUR = (setup => "33", to_server => "35", to_client => "36", closing => "31", local => "2");
+    my ($OFF, $ERR) = ("\e[0m", "\e[1;31m");
 
-    sub paint {
-        my ($s, $first) = @_;
-        my $nl = $s =~ s/\n$//;
-        $s =~ s/ \(DELAYED\)$//;                                 # added by the slow motion
-        if ($s =~ /^\+\+\+/) {                                   # +++ exited with 0 +++
-            $s = "$NAME$s";
-        } else {
-            $s =~ s/("(?:[^"\\]|\\.)*")/$DATA$1$ARGS/g;
-            $s =~ s/^(\w+)\(/$NAME$1$ARGS(/ if $first;
-            $s =~ s/(\)\s+= )(-1|\?)(.*)$/$1$ERR$2$3/
-                or $s =~ s/(\)\s+= )(\d+)/$1$OK$2/;
-        }
-        return $nl ? "$s$OFF\n" : $s;
+    my %fd;      # open sockets: fd -> what it is ("listening on :8080", ...)
+    my %side;    # fd -> "client" (it called connect) or "server" (it came from accept)
+
+    # Which colour a call gets, decided when it starts: its name and first argument.
+    sub category {
+        my ($name, $fd) = @_;
+        return "setup" if $name =~ /^(connect|accept4?)$/;
+        if ($name eq "sendto")   { return ($side{$fd} // "") eq "server" ? "to_client" : "to_server" }
+        if ($name eq "recvfrom") { return ($side{$fd} // "") eq "server" ? "to_server" : "to_client" }
+        return "closing" if $name eq "close" && exists $fd{$fd};
+        return "local";
     }
 
-    my ($start, $strace) = (1, 0);
+    # A whole strace line is done: update the list of open sockets.
+    sub track {
+        my ($line) = @_;
+        my ($name, $fd, $result) = $line =~ /^(\w+)\((\d+)?.*\)\s+= (-?\d+)/ or return 0;
+        return 0 if $result < 0;
+        my ($port) = $line =~ /htons\((\d+)\)/;
+        if    ($name eq "socket")                { $fd{$result} = "new socket" }
+        elsif (!defined $fd)                     { return 0 }
+        elsif ($name eq "bind")                  { $fd{$fd} = "bound to :$port" }
+        elsif ($name eq "listen")                { my ($where) = ($fd{$fd} // "") =~ /(:\d+)/;
+                                                   $fd{$fd} = "listening" . ($where ? " on $where" : "") }
+        elsif ($name eq "connect")               { $fd{$fd} = "connected to :$port"; $side{$fd} = "client" }
+        elsif ($name =~ /^accept/)               { $fd{$result} = "connected to :$port"; $side{$result} = "server" }
+        elsif ($name eq "close" && exists $fd{$fd}) { delete $fd{$fd}; delete $side{$fd} }
+        else                                     { return 0 }
+        return 1;
+    }
+
+    sub fd_list {
+        my $list = join ", ", map { "$_ = $fd{$_}" } sort { $a <=> $b } keys %fd;
+        return "\e[2m  open fds: " . ($list || "none") . "$OFF\n";
+    }
+
+    my ($start, $strace, $line, $call, $colour) = (1, 0, "", "", "");
     while (sysread(STDIN, my $buf, 4096)) {
         for my $piece (split /(?<=\n)/, $buf) {
             # Resizing the terminal interrupts a blocked call, which strace
@@ -65,17 +90,40 @@ strace -e trace="$SYSCALLS" ${SLOW_MOTION[@]+"${SLOW_MOTION[@]}"} -e signal=none
             # restarts it transparently, so erase that line to avoid confusion.
             if (!$start && $piece =~ /ERESTARTSYS/) {
                 print "\r\e[2K$OFF";
-                $start = 1;
+                ($start, $line) = (1, "");
                 next;
             }
             if ($start) {
                 # Program lines start with SERVER:/CLIENT:/-----; anything else is strace.
                 $strace = $piece !~ /^(SERVER|CLIENT|-----|\n)/;
-                print $strace ? $BAR . $ARGS . paint($piece, 1) : $piece;
-            } else {
-                print $strace ? $ARGS . paint($piece, 0) : $piece;
+                if ($strace) {
+                    my ($name, $fd) = $piece =~ /^(\w+)\((\d+)?/;
+                    $call = $name // "";
+                    $colour = $piece =~ /^\+\+\+/ ? $COLOUR{local} : $COLOUR{category($call, $fd // -1)};
+                    print "\e[${colour}m│ ";
+                }
             }
-            $start = $piece =~ /\n$/;
+            if (!$strace) {
+                print $piece;
+                $start = $piece =~ /\n$/;
+                next;
+            }
+            my $nl = $piece =~ s/\n$//;
+            $piece =~ s/ \(DELAYED\)$//;                          # added by the slow motion
+            $line .= $piece;
+            my $bold = $colour eq "2" ? "" : "\e[1m";             # grey lines stay plain
+            $piece =~ s/^(\w+)\(/$bold$1\e[22m\e[${colour}m(/ if $start;
+            $piece =~ s/("(?:[^"\\]|\\.)*")/$bold$1\e[22m\e[${colour}m/g;
+            $piece =~ s/(\)\s+= )(-1|\?)(.*)$/$1$ERR$2$3/
+                or ($call eq "recvfrom" and $piece =~ s/(\)\s+= )(0)$/$1$ERR$2/)
+                or $piece =~ s/(\)\s+= )(\d+)/$1$bold$2/;
+            print $piece;
+            if ($nl) {
+                print "$OFF\n";
+                print fd_list() if track($line);
+                $line = "";
+            }
+            $start = $nl;
         }
     }
 ' | "$(dirname "$0")/stamp"
