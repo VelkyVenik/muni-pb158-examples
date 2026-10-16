@@ -174,17 +174,7 @@ Keep `server.c` and `client.c` open next to the demo.
    the server closes its fd, which sends the second `FIN`. Each `FIN` is acknowledged with an `ACK`.
 9. **Most socket calls send nothing at all.** See below.
 
-<details>
-<summary>Answers to 1 and 2</summary>
-
-1. Every program starts with three files already open: `0` = standard input (keyboard),
-   `1` = standard output, `2` = standard error (both the terminal). The kernel always
-   hands out the **lowest free** number, so the first new one is `3`.
-2. `fd=4`, the connection. The listening socket `fd=3` never carries data. Its only job
-   is to accept new connections. A server talking to 100 clients has one listening
-   socket plus 100 connection sockets.
-
-</details>
+**Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
 ## Reading the packets
 
@@ -415,7 +405,7 @@ client again in the CLIENT pane (click it first) at any time:
 ```
 
 The experiments below use `./run`. Replace it with `./trace` to see the system calls too.
-**Guess the result before you look**, then open the answer.
+**Guess the result before you look**, then read the answer at the end of this file.
 
 ### 1. Two clients at once
 
@@ -429,33 +419,13 @@ This starts one client in the background (its output is thrown away) and a secon
 The server handles one client at a time. What happens to the second client's `connect()`?
 Watch the PACKETS pane.
 
-<details>
-<summary>What happens</summary>
-
-The second client's `SYN`, `SYN-ACK`, `ACK` appear **immediately**, and its `connect()`
-returns, even though the server program is busy with the first client and has not
-called `accept()`. Its `"Hello server!"` is even acknowledged (`ACK`) by the server's kernel.
-Only the reply comes later, after the server finishes with the first client.
-
-That is what `listen(listen_fd, 5)` means: the **kernel** accepts up to 5 connections by itself
-and queues them. `accept()` only takes the next one from that queue.
-
-</details>
+**Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
 ### 2. Kill the client
 
 Run `./run ./client` and press `Ctrl-C` while it says `sleeping 2 s before sending...`.
 
-<details>
-<summary>What happens</summary>
-
-The packets show the handshake, then a `FIN` from the client with no `DATA` before it.
-The server's first `recv()` returns `0` (`client closed the connection`).
-
-The client never called `close()`. When a program ends, for whatever reason, the kernel
-closes all its file descriptors, and closing a TCP socket sends a `FIN`.
-
-</details>
+**Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
 ### 3. Be the client yourself
 
@@ -467,17 +437,7 @@ nc 127.0.0.1 8080
 
 Type `hello`, press Enter and wait. Then press `Ctrl-C` to quit `nc`.
 
-<details>
-<summary>What happens</summary>
-
-The server receives `"hello\n"`, **6 bytes**: Enter adds a newline character (`\n`).
-You see `Hello client!` as the reply. Then nothing happens until you press `Ctrl-C`,
-because the server waits for the client to close the connection.
-
-The server does not know or care that the other side is not `./client`. A protocol is only
-an agreement about which bytes go back and forth.
-
-</details>
+**Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
 ### 4. A message bigger than the buffer
 
@@ -498,29 +458,14 @@ with
 
 then run `make` and `./run ./client` in the CLIENT pane.
 
-<details>
-<summary>What happens</summary>
-
-The packets show **one** `DATA` packet of 2000 bytes. But the server's first `recv()` returns
-`1023`, and its *second* `recv()`, the one meant to wait for the close, returns the remaining
-`977`. One `send()` was split across two `recv()` calls: TCP is a stream of bytes, not of messages.
-
-Undo your change afterwards (with git: `git checkout client.c`).
-
-</details>
+**Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
 ### 5. Start a second server
 
 Click the SERVER pane and press `Ctrl-b "` (Ctrl-b, then the double-quote key). This opens a new pane.
 Run `./run ./server` there.
 
-<details>
-<summary>What happens</summary>
-
-`bind() failed: Address already in use`. Only one socket can listen on 127.0.0.1:8080.
-Close the extra pane with `exit`.
-
-</details>
+**Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
 ### Changing the code
 
@@ -588,4 +533,57 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `lab.sh`      | starts the lab on macOS / Linux / WSL: finds a working Podman or Docker, then runs compose |
 | `lab.cmd`, `lab.ps1` | the same for Windows (`lab.cmd` only starts `lab.ps1`) |
 | `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2, netcat |
-| `compose.yaml`| runs the container and mounts this directory at `/lab` |
+| `compose.yaml`| runs the container and shares this folder with it, read-only, at `/lab` |
+
+## Answers
+
+Try to answer the questions yourself before you read these.
+
+### What to observe, questions 1 and 2
+
+1. Every program starts with three files already open: `0` = standard input (keyboard),
+   `1` = standard output, `2` = standard error (both the terminal). The kernel always
+   hands out the **lowest free** number, so the first new one is `3`.
+2. `fd=4`, the connection. The listening socket `fd=3` never carries data. Its only job
+   is to accept new connections. A server talking to 100 clients has one listening
+   socket plus 100 connection sockets.
+
+### Experiment 1. Two clients at once
+
+The second client's `SYN`, `SYN-ACK`, `ACK` appear **immediately**, and its `connect()`
+returns, even though the server program is busy with the first client and has not
+called `accept()`. Its `"Hello server!"` is even acknowledged (`ACK`) by the server's kernel.
+Only the reply comes later, after the server finishes with the first client.
+
+That is what `listen(listen_fd, 5)` means: the **kernel** accepts up to 5 connections by itself
+and queues them. `accept()` only takes the next one from that queue.
+
+### Experiment 2. Kill the client
+
+The packets show the handshake, then a `FIN` from the client with no `DATA` before it.
+The server's first `recv()` returns `0` (`client closed the connection`).
+
+The client never called `close()`. When a program ends, for whatever reason, the kernel
+closes all its file descriptors, and closing a TCP socket sends a `FIN`.
+
+### Experiment 3. Be the client yourself
+
+The server receives `"hello\n"`, **6 bytes**: Enter adds a newline character (`\n`).
+You see `Hello client!` as the reply. Then nothing happens until you press `Ctrl-C`,
+because the server waits for the client to close the connection.
+
+The server does not know or care that the other side is not `./client`. A protocol is only
+an agreement about which bytes go back and forth.
+
+### Experiment 4. A message bigger than the buffer
+
+The packets show **one** `DATA` packet of 2000 bytes. But the server's first `recv()` returns
+`1023`, and its *second* `recv()`, the one meant to wait for the close, returns the remaining
+`977`. One `send()` was split across two `recv()` calls: TCP is a stream of bytes, not of messages.
+
+Undo your change afterwards (with git: `git checkout client.c`).
+
+### Experiment 5. Start a second server
+
+`bind() failed: Address already in use`. Only one socket can listen on 127.0.0.1:8080.
+Close the extra pane with `exit`.
