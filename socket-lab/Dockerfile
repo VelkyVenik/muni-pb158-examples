@@ -9,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       gcc libc6-dev make gdb strace tcpdump tmux iproute2 procps less \
-      netcat-openbsd \
+      netcat-openbsd perl \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /lab

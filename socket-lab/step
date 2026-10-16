@@ -13,4 +13,9 @@
 #   usage: ./step ./server
 #          STEP_DELAY=1 ./step ./client     (seconds between lines, default 0.5)
 
-exec gdb -q -batch -nx -x "$(dirname "$0")/step.py" --args "$@"
+# Keys you press are not echoed (the program does not read them anyway),
+# so they do not end up in the middle of its output.
+stty -echo 2>/dev/null
+trap 'stty echo 2>/dev/null' EXIT
+
+gdb -q -batch -nx -x "$(dirname "$0")/step.py" --args "$@" | "$(dirname "$0")/stamp"

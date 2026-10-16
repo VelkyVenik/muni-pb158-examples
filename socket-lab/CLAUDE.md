@@ -14,7 +14,11 @@ containers). README.md is the student-facing manual.
 - `start.sh <demo|strace|step|step_strace>` — builds in container-local `/work` (symlinks to
   `/lab` sources, which is mounted `:ro`: never write to the host mount), creates tmux panes, starts
   packets → server → client in order. `compose.yaml` has one service per mode (`extends: lab`).
-- `packets` (tcpdump → perl), `trace` (strace → perl), `step`/`step_strace` (gdb + `step.py`).
+- `packets` (tcpdump → perl), `trace` (strace → perl, `LAB_DELAY` slow motion via `inject=...:delay_exit`),
+  `step`/`step_strace` (gdb + `step.py`, keyboard pacing via /dev/tty, echo off), `run`. All panes
+  share one clock: `LAB_T0` (exported by start.sh) and `stamp` (timestamps + SERVER/CLIENT colours).
+- Modes: `lab` (default) = strace mode, `plain`, `step`, `step_strace`. Launchers run `compose build lab` first.
+- Pane width can be ~40 cols: anything erased with `\r\e[2K` must fit on one row.
 
 ## Rules
 - Debian 12 (gdb 13) on purpose: gdb 15+ fails on Apple M4/M5 (SVE). Don't bump the base image.

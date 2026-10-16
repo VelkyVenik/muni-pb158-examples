@@ -11,19 +11,30 @@
 #   │  77          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
 #         ↳ accept(3, 127.0.0.1:56042) = 4
 #
+# The keyboard controls the pace. The program stops before every line that
+# makes a socket call (socket(), connect(), send(), ...) and waits for a key:
+#
+#   Enter  run up to the next socket call
+#   n      run just the next line
+#   c      keep running, STEP_DELAY seconds per line (any key stops again)
+#
 # Why not simply run strace as well? A process can only be traced by one
 # tool at a time, and gdb is already tracing it. So gdb catches the system
 # calls itself ("catch syscall") and this script prints them.
 
 import errno
 import os
+import re
+import select
 import socket
 import struct
+import termios
 import time
+import tty
 
 import gdb
 
-DELAY = float(os.environ.get("STEP_DELAY", "0.5"))     # seconds per line
+DELAY = float(os.environ.get("STEP_DELAY", "0.5"))     # seconds per line when running
 SHOW_SYSCALLS = os.environ.get("STEP_SYSCALLS") == "1"
 SYSCALLS = ["socket", "setsockopt", "bind", "listen", "accept", "accept4",
             "connect", "getsockname", "sendto", "recvfrom", "close", "dup"]
@@ -171,6 +182,63 @@ def at_start_of_new_line():
     return sal.symtab is not None and sal.pc == frame.pc() and sal.line != previous_line[0]
 
 
+# --- keyboard -----------------------------------------------------------------
+
+# A line stops if it calls one of these (the text in "strings" does not count).
+SOCKET_CALL = re.compile(r"\b(socket|setsockopt|bind|listen|accept|connect|getsockname|send|recv|close)\s*\(")
+STRING = re.compile(r'"(\\.|[^"\\])*"')
+KEYS = "Enter: next socket call   n: next line   c: run"
+
+try:
+    keyboard = os.open("/dev/tty", os.O_RDONLY)
+except OSError:
+    keyboard = None                          # no terminal (e.g. a test): just run
+# "calls": stop before socket calls, "line": stop before every line, "run": don't stop
+pace = ["calls" if keyboard is not None else "run"]
+waiting = []                                 # set while the ⏸ hint is on screen
+
+
+def read_key(timeout=None):
+    """One key press, or None if none came within timeout seconds."""
+    old = termios.tcgetattr(keyboard)
+    try:
+        tty.setcbreak(keyboard)              # keys arrive one by one, not after Enter
+        ready, _, _ = select.select([keyboard], [], [], timeout)
+        return os.read(keyboard, 1).decode(errors="ignore") if ready else None
+    finally:
+        termios.tcsetattr(keyboard, termios.TCSADRAIN, old)
+
+
+def wait_before(code):
+    """Called after a line is shown and before it runs: wait for a key, or a moment."""
+    if pace[0] == "run":
+        if keyboard is None:
+            time.sleep(DELAY)
+            return
+        if read_key(DELAY) is None:
+            return
+        pace[0] = "line"                     # a key stops the running, right here
+    if pace[0] == "calls" and not SOCKET_CALL.search(STRING.sub('""', code)):
+        time.sleep(DELAY)
+        return
+    say("%s      ⏸ Enter / n / c%s" % (NUM, OFF))   # short: must fit a narrow pane
+    termios.tcflush(keyboard, termios.TCIFLUSH)   # forget keys pressed earlier
+    waiting.append(True)
+    while True:
+        key = read_key()
+        if key in ("\n", "\r", " "):
+            pace[0] = "calls"
+        elif key == "n":
+            pace[0] = "line"
+        elif key == "c":
+            pace[0] = "run"
+        else:
+            continue
+        break
+    waiting.clear()
+    say("\r\033[2K")                         # remove the hint again
+
+
 # --- stepping -----------------------------------------------------------------
 
 catchpoints = {}     # catchpoint number -> system call name
@@ -275,6 +343,10 @@ run("break main")
 # so open the same terminal again through /proc.)
 run("run >> /proc/%d/fd/%d 2>&1" % (os.getpid(), TERMINAL))
 
+if keyboard is not None:
+    say("%s %sThe program stops before each socket call (⏸).%s\n" % (BAR, NUM, OFF))
+    say("%s %s%s%s\n" % (BAR, NUM, KEYS, OFF))
+
 if SHOW_SYSCALLS:
     for name in SYSCALLS:
         run("catch syscall " + name)
@@ -287,7 +359,7 @@ try:
             run("continue")      # main() has returned: let the program finish
             continue
         show_line(sal)
-        time.sleep(DELAY)
+        wait_before(source(sal.symtab)[sal.line - 1])
         last_stop.clear()
         run("next")
         # A system call stops "next" half way. Show it, then finish the line.
@@ -302,7 +374,8 @@ except (Interrupted, KeyboardInterrupt, gdb.error):
     pass
 
 if gdb.selected_inferior().pid:
-    say("\n%s %s(stopped)%s\n" % (BAR, NUM, OFF))
+    # Replace a waiting ⏸ hint; otherwise keep the unfinished line (e.g. "↳ accept(3").
+    say("%s%s %s(stopped)%s\n" % ("\r\033[2K" if waiting else "\n", BAR, NUM, OFF))
     gdb.execute("kill", to_string=True)
 elif exit_code:
     say("%s %s(program exited with %s)%s\n" % (BAR, NUM, exit_code[0], OFF))

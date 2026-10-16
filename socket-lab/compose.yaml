@@ -19,14 +19,15 @@ services:
     # tcpdump needs raw packet sockets. Nothing else is required.
     cap_add:
       - NET_RAW
-    command: ["bash", "start.sh"]
-
-  # The same lab, with server and client running under strace.
-  strace:
-    extends: lab
+    # Program output + system calls (strace) + packets.
     command: ["bash", "start.sh", "strace"]
 
-  # The same lab, stepping through the C code line by line (gdb).
+  # Only the program output and the packets.
+  plain:
+    extends: lab
+    command: ["bash", "start.sh", "plain"]
+
+  # The C code line by line (gdb); you control the pace with the keyboard.
   step:
     extends: lab
     command: ["bash", "start.sh", "step"]

@@ -1,0 +1,47 @@
+#!/usr/bin/env perl
+#
+# Put a timestamp in front of every line of output, and colour the programs'
+# own lines like the PACKETS pane does: SERVER blue, CLIENT green, errors red.
+#
+#      3.002 SERVER: accept() -> fd=4   <-- NEW fd for this connection
+#
+# The time is seconds since the lab started, the same clock as the TIME
+# column in the PACKETS pane, so you can find the packet that belongs to a
+# line. It is the time the line *started*: for a blocked call that is when
+# the program went into it.
+#
+#   usage: ./server | ./stamp     (./run, ./trace and ./step do this for you)
+
+use strict;
+use warnings;
+use Time::HiRes qw(time);
+
+$| = 1;
+$SIG{INT} = 'IGNORE';    # Ctrl-C stops the program; we stop when its output ends
+my $t0 = $ENV{LAB_T0} || time;    # set by start.sh
+
+my ($DIM, $RED, $OFF) = ("\e[2m", "\e[1;31m", "\e[0m");
+my %COLOUR = (SERVER => "\e[1;34m", CLIENT => "\e[1;32m");
+
+my ($start, $colour) = (1, "");
+while (sysread(STDIN, my $buf, 4096)) {
+    for my $piece (split /(?<=\n)/, $buf) {
+        # "\r\e[2K" erases the current line (used by ./trace and ./step):
+        # what follows is a new line and gets its own timestamp.
+        if ($piece =~ s/^\r\e\[2K//) {
+            print "\r\e[2K";
+            $start = 1;
+            next if $piece eq "";
+        }
+        my $nl = $piece =~ s/\n\z//;
+        if ($start && $piece ne "") {
+            print $DIM, sprintf("%8.3f ", time - $t0), $OFF;
+            $colour = $piece =~ /^(SERVER|CLIENT):.*fail/ ? $RED
+                    : $piece =~ /^(SERVER|CLIENT):/        ? $COLOUR{$1}
+                    : $piece =~ /^-----/                    ? $DIM
+                    :                                         "";
+        }
+        print $colour, $piece, ($colour ? $OFF : ""), ($nl ? "\n" : "");
+        $start = $nl;
+    }
+}

@@ -1,10 +1,10 @@
 # lab.ps1 - Windows version of lab.sh. Start it with lab.cmd:
 #
-#   .\lab.cmd [lab|strace|step|step_strace]      (default: lab)
+#   .\lab.cmd [lab|plain|step|step_strace]       (default: lab)
 #
 # Finds a working container engine: Podman first, then Docker. For each one it checks
 # that it is installed, running, can run a container ("hello-world") and has
-# "compose", then runs:   <engine> compose run --rm <mode>
+# "compose", then runs:   <engine> compose build lab, <engine> compose run --rm <mode>
 #
 # Set LAB_ENGINE=docker to use only Docker.
 # Written for Windows PowerShell 5.1, which every Windows 10/11 has.
@@ -13,7 +13,7 @@ param([string]$Mode = "lab")
 
 Set-Location -LiteralPath $PSScriptRoot
 
-$modes = @("lab", "strace", "step", "step_strace")
+$modes = @("lab", "plain", "step", "step_strace")
 if ($modes -notcontains $Mode) {
     Write-Host "Unknown mode: $Mode"
     Write-Host ("Usage: .\lab.cmd [" + ($modes -join "|") + "]")
@@ -88,12 +88,16 @@ $reasons = @()
 foreach ($engine in $engines) {
     $result = Check $engine
     if ($result -is [array]) {
-        Write-Host ""
-        Write-Host ("Starting:  " + ($result -join " ") + " run --rm $Mode")
-        Write-Host "(The first start builds the lab image, which takes a few minutes.)" -ForegroundColor DarkGray
-        Write-Host "(To quit the lab: press Ctrl-b, release, then press d.)" -ForegroundColor DarkGray
         $rest = @()
         if ($result.Count -gt 1) { $rest = $result[1..($result.Count - 1)] }
+        Write-Host ""
+        Write-Host ("Building:  " + ($result -join " ") + " build lab")
+        Write-Host "(The first time this takes a few minutes, later only seconds.)" -ForegroundColor DarkGray
+        & $result[0] @rest build lab
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Write-Host ""
+        Write-Host ("Starting:  " + ($result -join " ") + " run --rm $Mode")
+        Write-Host "(To quit the lab: press Ctrl-b, release, then press d.)" -ForegroundColor DarkGray
         & $result[0] @rest run --rm $Mode
         exit $LASTEXITCODE
     }

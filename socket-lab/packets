@@ -2,10 +2,12 @@
 #
 # Show the demo's TCP packets, one readable line per packet:
 #
-#    +2.003s  CLIENT:59456 → SERVER:8080   DATA      13   "Hello server!"
+#      5.004  +2.003s  CLIENT:59456 → SERVER:8080   DATA      13   "Hello server!"
 #
-#    time since the previous packet, who sends to whom, what kind of
-#    packet it is, how many bytes of data it carries, and the data itself.
+#    when (seconds since the lab started, the same clock as the timestamps
+#    in the SERVER and CLIENT panes), the gap since the previous packet,
+#    who sends to whom, what kind of packet it is, how many bytes of data
+#    it carries, and the data itself.
 #
 # This runs plain tcpdump and rewrites its output. To see the raw tcpdump
 # output instead, run:   tcpdump -i lo -nn 'tcp port 8080'
@@ -14,11 +16,14 @@
 
 PORT=8080
 
-# -ttt  time since the previous packet
-# -x    hex dump of each packet (used here only to pull out the data)
-tcpdump -i lo -nn -l --immediate-mode -ttt -x "tcp port $PORT" 2>&1 | PORT="$PORT" perl -e '
+# -tt  time of each packet, in seconds (since 1970)
+# -x   hex dump of each packet (used here only to pull out the data)
+tcpdump -i lo -nn -l --immediate-mode -tt -x "tcp port $PORT" 2>&1 | PORT="$PORT" perl -e '
+    use Time::HiRes qw(time);
     $| = 1;
     my $port = $ENV{PORT};
+    my $t0 = $ENV{LAB_T0} || time;    # set by start.sh, shared with ./stamp
+    my $previous;
 
     sub paint { my ($colour, $text) = @_; "\e[${colour}m$text\e[0m" }
 
@@ -46,16 +51,18 @@ tcpdump -i lo -nn -l --immediate-mode -ttt -x "tcp port $PORT" 2>&1 | PORT="$POR
     my ($pending, $len, $need, @bytes);
     while (<STDIN>) {
         # Packet line, e.g.
-        #  00:00:02.003114 IP 127.0.0.1.59456 > 127.0.0.1.8080: Flags [P.], seq 1:14, ..., length 13: HTTP
-        if (/^\s*(\d+):(\d+):([\d.]+) IP \S+?\.(\d+) > \S+?\.(\d+): Flags \[([^\]]*)\].*?length (\d+)/) {
-            my $dt = $1 * 3600 + $2 * 60 + $3;
-            my $time = sprintf "%8s", sprintf "+%.3fs", $dt;
+        #  1792163391.135803 IP 127.0.0.1.59456 > 127.0.0.1.8080: Flags [P.], seq 1:14, ..., length 13: HTTP
+        if (/^\s*([\d.]+) IP \S+?\.(\d+) > \S+?\.(\d+): Flags \[([^\]]*)\].*?length (\d+)/) {
+            my ($t, $from, $to, $flags, $bytes) = ($1, $2, $3, $4, $5);
+            my $gap = defined $previous ? $t - $previous : 0;
+            $previous = $t;
             # Long gaps are where a program was blocked or sleeping.
-            $time = paint($dt >= 0.5 ? "1" : "2", $time);
+            my $time = sprintf "%8.3f  %s", $t - $t0,
+                paint($gap >= 0.5 ? "1" : "2", sprintf "%8s", sprintf "+%.3fs", $gap);
             my $line = sprintf "%s  %s \xe2\x86\x92 %s  %s  %-3d",
-                $time, who($4), who($5), kind($6, $7), $7;
-            if ($7 > 0) {
-                ($pending, $len, $need, @bytes) = ($line, $7, undef);   # wait for the data
+                $time, who($from), who($to), kind($flags, $bytes), $bytes;
+            if ($bytes > 0) {
+                ($pending, $len, $need, @bytes) = ($line, $bytes, undef);   # wait for the data
             } else {
                 print "$line\n";
                 $pending = undef;
@@ -81,7 +88,7 @@ tcpdump -i lo -nn -l --immediate-mode -ttt -x "tcp port $PORT" 2>&1 | PORT="$POR
         next if /verbose output suppressed/;
         if (/^listening on/) {
             print "Watching TCP port $port on the loopback interface. One line = one packet.\n\n";
-            print paint("2", sprintf "%8s  %-15s%-14s%-10s%-5s%s", "TIME", "FROM", "TO", "TYPE", "LEN", "DATA"), "\n";
+            print paint("2", sprintf "%8s  %8s  %-15s%-14s%-10s%-5s%s", "TIME", "GAP", "FROM", "TO", "TYPE", "LEN", "DATA"), "\n";
             next;
         }
         print;    # anything else (e.g. an error from tcpdump) as it is

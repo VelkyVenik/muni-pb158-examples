@@ -1,25 +1,38 @@
 #!/usr/bin/env bash
 #
 # Run a program under strace, with the system call lines highlighted
-# so they stand out from the program's own output:
+# so they stand out from the program's own output, and a timestamp in
+# front of every line (seconds since the lab started, see ./stamp):
 #
-#   │ recvfrom(4, "Hello server!", 1023, 0, NULL, NULL) = 13
-#     ^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^    ^^
-#     yellow    cyan, data in magenta                     green (red on error)
+#      5.004 │ recvfrom(4, "Hello server!", 1023, 0, NULL, NULL) = 13
+#              ^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^    ^^
+#              yellow    cyan, data in magenta                     green (red on error)
+#
+# Slow motion: after each socket system call the program waits LAB_DELAY
+# seconds (default 1), so you can follow it. LAB_DELAY=0 turns this off.
 #
 #   usage: ./trace ./server
 #          ./trace ./client
+#          LAB_DELAY=0 ./trace ./client
 #
 # Only the system calls used in server.c / client.c are shown.
 # (send() and recv() show up as sendto() and recvfrom(). dup() is there
 # because perror() uses it, together with close(), to print an error.)
 
 SYSCALLS=socket,setsockopt,bind,listen,accept,accept4,connect,getsockname,sendto,recvfrom,close,dup
+SLOW=socket,setsockopt,bind,listen,accept,accept4,connect,getsockname,sendto,recvfrom
+
+# strace delays these calls when they return (delay_exit, in microseconds).
+DELAY_US=$(perl -e 'printf "%d", ($ARGV[0] // 1) * 1e6' "${LAB_DELAY:-1}")
+SLOW_MOTION=()
+if [ "$DELAY_US" -gt 0 ]; then
+    SLOW_MOTION=(-e "inject=$SLOW:delay_exit=$DELAY_US")
+fi
 
 # Program output and strace output go through ONE pipe, so their order is
 # preserved. The filter works on raw chunks, not whole lines, so an
 # unfinished call like "accept(3, " shows up while the program is blocked.
-strace -e trace="$SYSCALLS" -e signal=none "$@" 2>&1 | perl -e '
+strace -e trace="$SYSCALLS" ${SLOW_MOTION[@]+"${SLOW_MOTION[@]}"} -e signal=none "$@" 2>&1 | perl -e '
     $| = 1;
     my $BAR  = "\e[1;33m│\e[0m ";
     my $NAME = "\e[1;33m";    # syscall name: bold yellow
@@ -32,6 +45,7 @@ strace -e trace="$SYSCALLS" -e signal=none "$@" 2>&1 | perl -e '
     sub paint {
         my ($s, $first) = @_;
         my $nl = $s =~ s/\n$//;
+        $s =~ s/ \(DELAYED\)$//;                                 # added by the slow motion
         if ($s =~ /^\+\+\+/) {                                   # +++ exited with 0 +++
             $s = "$NAME$s";
         } else {
@@ -64,4 +78,4 @@ strace -e trace="$SYSCALLS" -e signal=none "$@" 2>&1 | perl -e '
             $start = $piece =~ /\n$/;
         }
     }
-'
+' | "$(dirname "$0")/stamp"

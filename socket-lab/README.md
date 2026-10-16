@@ -61,34 +61,32 @@ If you have both and want Docker, run `LAB_ENGINE=docker ./lab.sh`
 your home folder. The lab only *reads* your files, so Lima's default read-only sharing is fine.
 
 The first start builds the lab image, which takes a few minutes. After that it starts
-in seconds. The demo then **runs by itself**: the server starts, waits, and two
-seconds later the client connects.
+in seconds. The demo then **runs by itself, in slow motion**: the server starts and waits,
+then the client connects. After every socket call the program pauses for a second, so you
+can follow each step in all three panes.
 
 > **To quit, press `Ctrl-b`, release it, then press `d`.** This closes the lab and
 > stops the container. See [tmux basics](#tmux-basics) for more keys.
 
 ## 3. The four modes
 
-Each mode is the same demo with a different amount of detail. Go through them in this order
-(on Windows, `.\lab.cmd strace` and so on):
+Each mode is the same conversation with a different amount of detail
+(on Windows, `.\lab.cmd step` and so on):
 
-| Command | Adds | Use it to see |
-|---------|------|---------------|
-| `./lab.sh` | program output + packets | the big picture: who sends what, and when |
-| `./lab.sh strace` | + system calls (`strace`) | what the program asks the kernel, and what it gets back |
-| `./lab.sh step` | + the C code, line by line (`gdb`) | which line of C is running, and where it waits |
-| `./lab.sh step_strace` | C lines + system calls + packets, all together | one socket call going through every level |
+| Command | Shows | You control the pace? |
+|---------|-------|-----------------------|
+| `./lab.sh` | program output + system calls (`strace`) + packets | no, slow motion (1 s after each socket call) |
+| `./lab.sh step` | the C code line by line (`gdb`) + program output + packets | **yes, with the keyboard** |
+| `./lab.sh step_strace` | C lines + system calls + program output + packets | **yes, with the keyboard** |
+| `./lab.sh plain` | only program output + packets | no, full speed |
 
-`step_strace` is the goal: one line of C, the system call it makes, the program's
-output and the packet that follows, all on one screen. The first three modes
-introduce those pieces one at a time.
+Start with `./lab.sh` to get the big picture. Then use `step_strace`, where **you**
+press Enter to run each socket call, on the server and the client in turn, and watch
+what it does at every level. See [Stepping through the code](#stepping-through-the-code-step).
 
-Without the script, the same thing is `docker compose run --rm <mode>` or
-`podman compose run --rm <mode>` (or `podman-compose run --rm <mode>`), where
-`<mode>` is `lab`, `strace`, `step` or `step_strace`.
-
-See [Watching system calls](#watching-system-calls-strace) and
-[Stepping through the code](#stepping-through-the-code-step).
+Without the script, the same thing is `docker compose build lab` and then
+`docker compose run --rm <mode>` (or `podman compose` / `podman-compose`), where
+`<mode>` is `lab`, `step`, `step_strace` or `plain`.
 
 ## What you are looking at
 
@@ -107,7 +105,19 @@ See [Watching system calls](#watching-system-calls-strace) and
 
 Both programs print each socket call *before* making it and its result *after*,
 so a line ending in `waiting...` with nothing below it means the call is blocked.
-The programs pause for 2 seconds at a few points so you can see this.
+The programs also pause for 2 seconds at a few points so you can see this.
+
+**All three panes use the same clock.** Every line starts with the time in seconds since
+the lab started, and the colours match: SERVER blue, CLIENT green. To find the packet a
+line caused, look for the same time in the PACKETS pane:
+
+```text
+CLIENT pane:   6.127 │ connect(3, {sa_family=AF_INET, sin_port=htons(8080), ...}, 16) = 0
+PACKETS pane:  6.127   +0.000s  CLIENT:43420 → SERVER:8080   SYN       0
+```
+
+The time is when the line *started*. For a call that blocks, like `accept(3, `, that is
+when the program went into it. The program's next line shows when it came back.
 
 ## What to observe
 
@@ -118,13 +128,13 @@ Keep `server.c` and `client.c` open next to the demo.
    Which fd do the server's `recv()` and `send()` use?
 3. **`accept()` blocks.** The server sits at `waiting for connection...` until the client starts.
 4. **`recv()` blocks.** The server waits for data while the client sleeps. Later the client waits while the server sleeps.
-   The packet pane shows these as `+2.00s` gaps.
+   The packet pane shows these as long gaps in the `GAP` column.
 5. **`connect()` = the three-way handshake.** `SYN`, `SYN-ACK`, `ACK`. No data has been sent yet.
 6. **One `send()` produces one `DATA` packet** with 13 bytes, followed by an `ACK` in the other direction.
 7. **Ports.** The server uses 8080. The client got a random port from the kernel. Find it in
    the client's output (`my address is ...`) and in the packet pane.
 8. **Closing.** The client's `close()` sends a `FIN`. The server's `recv()` then returns `0`,
-   the server closes its fd, which sends the second `FIN`.
+   the server closes its fd, which sends the second `FIN`. Each `FIN` is acknowledged with an `ACK`.
 9. **Most socket calls send nothing at all.** See below.
 
 <details>
@@ -145,20 +155,22 @@ The bottom pane runs `./packets`, which is `tcpdump` with its output rewritten t
 one readable line per packet:
 
 ```text
-    TIME  FROM            TO              TYPE      LEN  DATA
- +0.000s  CLIENT:49142 → SERVER:8080   SYN       0
- +0.000s  SERVER:8080  → CLIENT:49142  SYN-ACK   0
- +0.000s  CLIENT:49142 → SERVER:8080   ACK       0
- +2.002s  CLIENT:49142 → SERVER:8080   DATA      13   "Hello server!"
- +0.000s  SERVER:8080  → CLIENT:49142  ACK       0
- +2.005s  SERVER:8080  → CLIENT:49142  DATA      13   "Hello client!"
- +0.000s  CLIENT:49142 → SERVER:8080   ACK       0
- +0.000s  CLIENT:49142 → SERVER:8080   FIN       0
- +0.000s  SERVER:8080  → CLIENT:49142  FIN       0
- +0.000s  CLIENT:49142 → SERVER:8080   ACK       0
+    TIME       GAP  FROM           TO            TYPE      LEN  DATA
+   6.127   +0.000s  CLIENT:43420 → SERVER:8080   SYN       0
+   6.127   +0.000s  SERVER:8080  → CLIENT:43420  SYN-ACK   0
+   6.127   +0.000s  CLIENT:43420 → SERVER:8080   ACK       0
+  10.134   +4.007s  CLIENT:43420 → SERVER:8080   DATA      13   "Hello server!"
+  10.134   +0.000s  SERVER:8080  → CLIENT:43420  ACK       0
+  13.147   +3.013s  SERVER:8080  → CLIENT:43420  DATA      13   "Hello client!"
+  13.147   +0.000s  CLIENT:43420 → SERVER:8080   ACK       0
+  14.149   +1.002s  CLIENT:43420 → SERVER:8080   FIN       0
+  14.189   +0.041s  SERVER:8080  → CLIENT:43420  ACK       0
+  15.159   +0.970s  SERVER:8080  → CLIENT:43420  FIN       0
+  15.159   +0.000s  CLIENT:43420 → SERVER:8080   ACK       0
 ```
 
-- **TIME**: time since the *previous* packet. A long gap means a program was blocked or sleeping.
+- **TIME**: seconds since the lab started, the same clock as in the SERVER and CLIENT panes.
+- **GAP**: time since the *previous* packet. A long gap means a program was blocked, sleeping or paused.
 - **FROM → TO**: both sides are `127.0.0.1`, so they differ only by port. 8080 is the server.
 - **TYPE**: what the packet is for. **LEN**: bytes of data it carries. **DATA**: those bytes.
 
@@ -173,8 +185,12 @@ Which line of C code caused each packet:
 | `ACK` after DATA     | the receiver's **kernel**, not `recv()`            |
 | `DATA` server→client | server's `send()`                                  |
 | `FIN` client→server  | client's `close()`                                 |
+| `ACK` after that FIN | the server's kernel                                |
 | `FIN` server→client  | server's `close()`                                 |
 | last `ACK`           | the client's kernel                                |
+
+In `plain` mode, without slow motion, the server closes so quickly that its kernel sends
+no separate `ACK` for the client's `FIN`: its own `FIN` carries the acknowledgement too.
 
 And what does **not** appear at all: `socket()`, `bind()`, `listen()`, `accept()`
 and `recv()` produce no packets. The kernel completes the handshake on its own and
@@ -214,22 +230,19 @@ a guess based on port 8080. The port does not define the protocol.
 
 ## Watching system calls (strace)
 
-`strace` shows every call a program makes into the kernel. Start the lab in
-strace mode:
-
-```bash
-./lab.sh strace      # Windows: .\lab.cmd strace
-```
-
-It is the same demo, but the server and client panes now show the real system
-calls (indented and coloured) right below each `printf`:
+`strace` shows every call a program makes into the kernel. The default mode
+(`./lab.sh`) runs the server and client under it, through `./trace`, so the panes show
+the real system calls (marked `│` and coloured) right below each `printf`:
 
 ```text
-SERVER: calling accept()
-SERVER: waiting for connection...
-    accept(3, {sa_family=AF_INET, sin_port=htons(57268), ...}, [16]) = 4
-SERVER: accept() -> fd=4   <-- NEW fd for this connection
+   4.049 SERVER: calling accept()
+   4.049 SERVER: waiting for connection...
+   4.049 │ accept(3, {sa_family=AF_INET, sin_port=htons(43420), sin_addr=inet_addr("127.0.0.1")}, [16]) = 4
+   7.128 SERVER: accept() -> fd=4   <-- NEW fd for this connection
 ```
+
+**Slow motion:** after each socket system call, `./trace` makes the program wait 1 second.
+Change it with `LAB_DELAY`, e.g. `LAB_DELAY=3 ./trace ./client`, or `LAB_DELAY=0` for full speed.
 
 What to observe:
 
@@ -249,7 +262,7 @@ What to observe:
 To trace something by hand, press `Ctrl-C` in a pane (or use a free shell) and run:
 
 ```bash
-./trace ./client                         # what strace mode runs: highlighted socket calls
+./trace ./client                         # what the lab runs: highlighted socket calls, slow motion
 strace -e trace=network,close ./server   # plain strace: networking calls + close
 strace ./client                          # everything, including memory and file calls
 ```
@@ -262,19 +275,34 @@ strace ./client                          # everything, including memory and file
 
 The server and client run under the `gdb` debugger, which executes `main()` one
 line at a time and prints each line of C code just *before* running it, together
-with the comment above it (in grey):
+with the comment above it (in grey).
+
+**You control the pace.** The program stops before every line that makes a socket call
+(`socket()`, `bind()`, `accept()`, `connect()`, `send()`, `recv()`, `close()`, ...) and
+shows `⏸`. Click the pane you want to control, then press:
+
+| Key   | What happens                                              |
+|-------|-----------------------------------------------------------|
+| Enter | run up to the next socket call                            |
+| `n`   | run just the next line                                    |
+| `c`   | keep running without stopping (any key stops again)       |
+
+The server and the client each wait for *their own* pane. Drive the server first, up to
+`accept()`. Then switch to the client (click it, or `Ctrl-b` + arrow key) and press Enter
+for `connect()`: watch the handshake appear in the PACKETS pane, and the server's `accept()`
+return. Then press Enter on the client's `send()` and on the server's `recv()`, and so on.
 
 ```text
-│          /* 3. listen() turns it into a listening socket. From now on the kernel
-│           *    does the TCP handshake with clients by itself and queues finished
-│           *    connections (up to 5 here) until we accept() them. */
-│  60      printf("SERVER: calling listen()\n");
-SERVER: calling listen()
-│  61      rc = listen(listen_fd, 5);
-│  62      if (rc < 0) {
-...
-│  77          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+  26.343 │          /* 3. listen() turns it into a listening socket. From now on the kernel
+  26.343 │           *    does the TCP handshake with clients by itself and queues finished
+  26.343 │           *    connections (up to 5 here) until we accept() them. */
+  27.850 │  60      printf("SERVER: calling listen()\n");
+  28.356 SERVER: calling listen()
+  28.357 │  61      rc = listen(listen_fd, 5);
+  28.357       ⏸ Enter / n / c
 ```
+
+Here the server stands *before* line 61: `listen()` has not run yet.
 
 The number is the line in `server.c` / `client.c`, so you can follow along in your editor.
 The comments come straight from the source: edit a comment, and the demo shows your text.
@@ -289,7 +317,8 @@ What to observe:
 4. **Both sides at once.** Watch the client's `send(...)` line and the server's `recv(...)` line
    finish at the same moment, and the `DATA` packet appear below.
 
-Too fast or too slow? In a pane, `Ctrl-C`, then for example `STEP_DELAY=1 ./step ./client`.
+When running (`c`), each line takes half a second. To change that, `Ctrl-C` in the pane and run
+for example `STEP_DELAY=1 ./step ./client`.
 
 ### Code and system calls together (step_strace)
 
@@ -300,10 +329,11 @@ Too fast or too slow? In a pane, `Ctrl-C`, then for example `STEP_DELAY=1 ./step
 Same as `step`, plus the system calls each line makes, right below it:
 
 ```text
-│  77          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
-      ↳ accept(3, 127.0.0.1:56042) = 4
-│  93          ssize_t n = recv(conn_fd, buf, sizeof(buf) - 1, 0);
-      ↳ recvfrom(4, "Hello server!", 1023) = 13
+  21.177 │  77          int conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+  21.685       ↳ accept(3, 127.0.0.1:60926) = 4
+  ...
+  48.242 │  93          ssize_t n = recv(conn_fd, buf, sizeof(buf) - 1, 0);
+  48.750       ↳ recvfrom(4, "Hello server!", 1023) = 13
 ```
 
 Now you can follow one call through all layers: the C line, the system call
@@ -342,11 +372,12 @@ The server keeps running and waits for the next client, so you can run the
 client again in the CLIENT pane (click it first) at any time:
 
 ```bash
-./client
+./trace ./client      # as at the start: system calls, slow motion, timestamps
+./run ./client        # only the program's output, with timestamps, full speed
+./client              # the bare program
 ```
 
-Try the experiments below in the plain `lab` mode first, then in `strace` mode
-(there, use `./trace ./client` and `./trace ./server` to see the system calls).
+The experiments below use `./run`. Replace it with `./trace` to see the system calls too.
 **Guess the result before you look**, then open the answer.
 
 ### 1. Two clients at once
@@ -354,7 +385,7 @@ Try the experiments below in the plain `lab` mode first, then in `strace` mode
 In the CLIENT pane run:
 
 ```bash
-./client > /dev/null & sleep 1; ./client
+./run ./client > /dev/null & sleep 1; ./run ./client
 ```
 
 This starts one client in the background (its output is thrown away) and a second one a second later.
@@ -376,7 +407,7 @@ and queues them. `accept()` only takes the next one from that queue.
 
 ### 2. Kill the client
 
-Run `./client` and press `Ctrl-C` while it says `sleeping 2 s before sending...`.
+Run `./run ./client` and press `Ctrl-C` while it says `sleeping 2 s before sending...`.
 
 <details>
 <summary>What happens</summary>
@@ -428,7 +459,7 @@ with
     msg[2000] = '\0';
 ```
 
-then run `make` and `./client` in the CLIENT pane.
+then run `make` and `./run ./client` in the CLIENT pane.
 
 <details>
 <summary>What happens</summary>
@@ -444,7 +475,7 @@ Undo your change afterwards (with git: `git checkout client.c`).
 ### 5. Start a second server
 
 Click the SERVER pane and press `Ctrl-b "` (Ctrl-b, then the double-quote key). This opens a new pane.
-Run `./server` there.
+Run `./run ./server` there.
 
 <details>
 <summary>What happens</summary>
@@ -463,10 +494,10 @@ computer, then **inside the lab** run:
 
 ```bash
 make                  # rebuild server and client
-./client              # run the new client
+./run ./client        # run the new client
 ```
 
-To restart the server, press `Ctrl-C` in its pane and run `./server`.
+To restart the server, press `Ctrl-C` in its pane and run `./trace ./server` (or `./run ./server`).
 `make clean` removes the built programs.
 
 ## tmux basics
@@ -499,8 +530,8 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `Permission denied` on SELinux systems (Fedora, RHEL) | `compose.yaml` already sets `label=disable`. If you start the container another way, add `--security-opt label=disable`. |
 | The panes are tiny or garbled | Make the terminal window bigger *before* starting. `Ctrl-b z` zooms one pane. |
 | I closed the terminal window and the lab is still running | `docker ps` (or `podman ps`) shows it. Stop it with `docker stop <ID>` (or `podman stop <ID>`). |
-| I changed the `Dockerfile` | Rebuild the image: `docker compose build` (or `podman compose build`). |
-| `step` is too slow / too fast | `Ctrl-C` in the pane, then `STEP_DELAY=0.2 ./step ./server` (seconds per line). |
+| Too slow / too fast | Default mode: `LAB_DELAY=0.3 ./trace ./client` (seconds after each socket call). Step modes: press `c` to run, `STEP_DELAY=0.2 ./step ./server` sets the speed. |
+| Step mode: nothing happens | The program waits at `⏸` for a key *in its own pane*. Click that pane, then press Enter. |
 
 ## Files
 
@@ -510,11 +541,13 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `client.c`    | the client                                           |
 | `Makefile`    | builds both with `-g -O0 -Wall -Wextra -Wpedantic`   |
 | `start.sh`    | runs inside the container: builds in `/work`, creates the tmux layout, starts everything (`bash start.sh strace` / `step` / `step_strace` for the other modes) |
-| `trace`       | runs a program under strace and highlights the system calls |
-| `step`        | runs a program under gdb, printing each line of C code as it runs |
+| `trace`       | runs a program under strace: highlighted system calls, slow motion, timestamps |
+| `run`         | runs a program with timestamps and colours, nothing else |
+| `stamp`       | adds the timestamps and colours (used by `run`, `trace`, `step`) |
+| `step`        | runs a program under gdb, printing each line of C code; the keyboard sets the pace |
 | `step_strace` | the same, plus the system calls each line makes      |
 | `step.py`     | the gdb (Python) script behind `step` and `step_strace` |
-| `packets`     | runs tcpdump and prints one readable line per packet |
+| `packets`     | runs tcpdump and prints one readable line per packet, on the lab's clock |
 | `lab.sh`      | starts the lab on macOS / Linux / WSL: finds a working Podman or Docker, then runs compose |
 | `lab.cmd`, `lab.ps1` | the same for Windows (`lab.cmd` only starts `lab.ps1`) |
 | `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2, netcat |

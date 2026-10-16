@@ -8,33 +8,34 @@
 #   | PACKETS                           |
 #   +-----------------------------------+
 #
-# Usage:  bash start.sh           the plain demo
-#         bash start.sh strace    same, with server and client under strace
-#         bash start.sh step      same, stepping through the C code line by line
+# Usage:  bash start.sh               program output + system calls (strace) + packets
+#         bash start.sh plain         program output + packets only
+#         bash start.sh step          the C code line by line (gdb), you control the pace
 #         bash start.sh step_strace   step + the system calls each line makes
 #
 set -euo pipefail
 cd "$(dirname "$0")"
 
-MODE="${1:-demo}"
+MODE="${1:-strace}"
 SESSION=lab
 PORT=8080
 export TERM="${TERM:-xterm-256color}"   # tmux refuses to start without it
 
 # What runs in each pane. Later exercises can swap these, e.g. "gdb ./server".
-SERVER_CMD="./server"
-CLIENT_CMD="./client"
 TCPDUMP_CMD="./packets"   # tcpdump, one readable line per packet
-SERVER_TITLE="SERVER"
-CLIENT_TITLE="CLIENT"
 
 case "$MODE" in
-    demo) ;;
     strace)
         SERVER_CMD="./trace ./server"   # strace with highlighted output
         CLIENT_CMD="./trace ./client"
-        SERVER_TITLE="SERVER (strace)"
-        CLIENT_TITLE="CLIENT (strace)"
+        SERVER_TITLE="SERVER (output + system calls)"
+        CLIENT_TITLE="CLIENT (output + system calls)"
+        ;;
+    plain)
+        SERVER_CMD="./run ./server"     # just the program, with timestamps
+        CLIENT_CMD="./run ./client"
+        SERVER_TITLE="SERVER"
+        CLIENT_TITLE="CLIENT"
         ;;
     step)
         SERVER_CMD="./step ./server"    # gdb, one line of C at a time
@@ -49,7 +50,7 @@ case "$MODE" in
         CLIENT_TITLE="CLIENT (step + syscalls)"
         ;;
     *)
-        echo "unknown mode: $MODE (use: demo, strace, step, step_strace)" >&2
+        echo "unknown mode: $MODE (use: strace, plain, step, step_strace)" >&2
         exit 1
         ;;
 esac
@@ -77,12 +78,17 @@ mkdir -p "$WORK"
 for f in "$SRC"/*.c "$SRC"/Makefile "$SRC"/step.py; do
     ln -s "$f" "$WORK/"
 done
-for f in packets trace step step_strace; do
+for f in packets trace step step_strace stamp run; do
     cp "$SRC/$f" "$WORK/$f"
     chmod +x "$WORK/$f"
 done
 cd "$WORK"
 make
+
+# The clock for all timestamps: seconds since now. The panes inherit it
+# through tmux, so the SERVER, CLIENT and PACKETS panes all use it.
+LAB_T0=$(date +%s.%N)
+export LAB_T0
 
 # 2. Start from a clean slate.
 tmux kill-session -t "$SESSION" 2>/dev/null || true

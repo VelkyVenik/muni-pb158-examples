@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#
+# Run a program with a timestamp in front of every line it prints, and its
+# lines coloured (SERVER blue, CLIENT green), so you can match them with the
+# packets below:
+#
+#      3.002 CLIENT: connect() -> 0
+#
+#   usage: ./run ./server
+#          ./run ./client
+#
+# The timestamps come from ./stamp.
+
+"$@" 2>&1 | "$(dirname "$0")/stamp"

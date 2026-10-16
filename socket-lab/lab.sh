@@ -8,9 +8,10 @@
 #   3. it can run a container (the tiny "hello-world" test image),
 #   4. it has "compose",
 #
-# and then runs:   <engine> compose run --rm <mode>
+# and then runs:   <engine> compose build lab      (quick when nothing changed)
+#                  <engine> compose run --rm <mode>
 #
-#   usage: ./lab.sh [lab|strace|step|step_strace]      (default: lab)
+#   usage: ./lab.sh [lab|plain|step|step_strace]       (default: lab)
 #          LAB_ENGINE=docker ./lab.sh                   (use only Docker)
 #
 # macOS, Linux and WSL. On Windows, run lab.cmd instead.
@@ -18,7 +19,7 @@
 set -u
 cd "$(dirname "$0")"
 
-MODES="lab strace step step_strace"
+MODES="lab plain step step_strace"
 MODE="${1:-lab}"
 case " $MODES " in
     *" $MODE "*) ;;
@@ -143,8 +144,11 @@ for engine in $ENGINES; do
         if [ ! -t 0 ] || [ ! -t 1 ]; then
             echo "Warning: this is not an interactive terminal, the lab may not start."
         fi
+        echo "Building:  ${COMPOSE[*]} build lab"
+        echo "${DIM}(The first time this takes a few minutes, later only seconds.)${OFF}"
+        "${COMPOSE[@]}" build lab || exit 1
+        echo
         echo "Starting:  ${COMPOSE[*]} run --rm $MODE"
-        echo "${DIM}(The first start builds the lab image, which takes a few minutes.)${OFF}"
         echo "${DIM}(To quit the lab: press Ctrl-b, release, then press d.)${OFF}"
         exec "${COMPOSE[@]}" run --rm "$MODE"
     fi
