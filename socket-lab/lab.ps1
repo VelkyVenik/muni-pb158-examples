@@ -50,11 +50,12 @@ function Check($engine) {
     }
     Ok "running"
 
-    $out = & $engine run --rm docker.io/library/hello-world 2>&1 | Out-String
+    # "$_" turns each line into plain text. (Windows PowerShell 5.1 wraps the
+    # program's error output in error records, which print as several lines.)
+    $out = @(& $engine run --rm docker.io/library/hello-world 2>&1 | ForEach-Object { "$_" } | Where-Object { $_.Trim() })
     if ($LASTEXITCODE -ne 0) {
         Fail "$engine cannot run a container"
-        $last = ($out.Trim() -split "`n")[-1]
-        return "$engine cannot run a container. The error was: $last"
+        return "$engine cannot run a container. The error was: " + $out[-1]
     }
     Ok "can run containers"
 
