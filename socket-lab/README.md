@@ -12,33 +12,18 @@ socket. While they do, you watch the same conversation at three levels at once:
 Everything runs inside one Linux container, so it works the same on Windows,
 macOS and Linux, and you cannot break anything on your own computer.
 
-## 1. One-time setup
+## 1. Get the files
 
-You need a **container engine**: a program that runs a small Linux system
-(a *container*) on your computer. Use **Docker Desktop** unless you already have Podman.
+You need **Docker** or **Podman**, either one. The lab works the same with both.
 
-| Your computer | Install | Notes |
-|---------------|---------|-------|
-| **Windows 10/11** | [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) | Choose the WSL 2 backend (the default) and restart when asked. Use **PowerShell** or **Windows Terminal**, not Git Bash (see [Troubleshooting](#troubleshooting)). |
-| **macOS** | [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) | Pick the Apple Silicon or Intel download to match your Mac. Use the **Terminal** app. |
-| **Linux** | [Docker Engine](https://docs.docker.com/engine/install/) with the compose plugin, or `podman` + `podman-compose` from your distribution | |
-
-Start Docker Desktop (wait until it says it is running), open a terminal and check:
-
-```bash
-docker run --rm hello-world
-```
-
-If you see `Hello from Docker!`, you are ready. If not, see [Troubleshooting](#troubleshooting).
-
-**Get the files.** Either with git:
+With git:
 
 ```bash
 git clone https://github.com/VelkyVenik/muni-pb158-examples.git
 cd muni-pb158-examples/socket-lab
 ```
 
-or without git: on the [GitHub page](https://github.com/VelkyVenik/muni-pb158-examples)
+Without git: on the [GitHub page](https://github.com/VelkyVenik/muni-pb158-examples)
 click **Code → Download ZIP**, unzip it, and in the terminal `cd` into the
 `socket-lab` folder inside it. (`cd` means "change directory". Tip: type `cd `
 and drag the folder into the terminal window.)
@@ -47,33 +32,56 @@ and drag the folder into the terminal window.)
 
 From the `socket-lab` folder:
 
-```bash
-docker compose run --rm lab
+| Your computer | Open | Type |
+|---------------|------|------|
+| **macOS, Linux** | Terminal | `./lab.sh` |
+| **Windows** | PowerShell or Windows Terminal (not Git Bash) | `.\lab.cmd` |
+| **Windows, inside WSL** | your WSL terminal | `./lab.sh` |
+
+The script finds out whether Docker or Podman works on your computer. It checks that
+it is installed, that it is running, that it can run a test container (`hello-world`)
+and that it has `compose`. Then it starts the lab:
+
+```text
+Checking docker...
+  OK    installed
+  OK    running
+  OK    can run containers
+  OK    compose (docker compose)
+
+Starting:  docker compose run --rm lab
 ```
 
-The first run downloads and builds the container image, which takes a few
-minutes. After that it starts in seconds. The demo then **runs by itself**: the
-server starts, waits, and two seconds later the client connects.
+If a check fails, the script tells you what to do (for example "Start Docker Desktop" or
+`podman machine start`). If you have both and want Podman, run `LAB_ENGINE=podman ./lab.sh`
+(PowerShell: `$env:LAB_ENGINE="podman"; .\lab.cmd`).
+
+The first start builds the lab image, which takes a few minutes. After that it starts
+in seconds. The demo then **runs by itself**: the server starts, waits, and two
+seconds later the client connects.
 
 > **To quit, press `Ctrl-b`, release it, then press `d`.** This closes the lab and
 > stops the container. See [tmux basics](#tmux-basics) for more keys.
 
-With Podman, type `podman compose` instead of `docker compose` everywhere.
-
 ## 3. The four modes
 
-Each mode is the same demo with a different amount of detail. Go through them in this order:
+Each mode is the same demo with a different amount of detail. Go through them in this order
+(on Windows, `.\lab.cmd strace` and so on):
 
 | Command | Adds | Use it to see |
 |---------|------|---------------|
-| `docker compose run --rm lab` | program output + packets | the big picture: who sends what, and when |
-| `docker compose run --rm strace` | + system calls (`strace`) | what the program asks the kernel, and what it gets back |
-| `docker compose run --rm step` | + the C code, line by line (`gdb`) | which line of C is running, and where it waits |
-| `docker compose run --rm step_strace` | C lines + system calls + packets, all together | one socket call going through every level |
+| `./lab.sh` | program output + packets | the big picture: who sends what, and when |
+| `./lab.sh strace` | + system calls (`strace`) | what the program asks the kernel, and what it gets back |
+| `./lab.sh step` | + the C code, line by line (`gdb`) | which line of C is running, and where it waits |
+| `./lab.sh step_strace` | C lines + system calls + packets, all together | one socket call going through every level |
 
 `step_strace` is the goal: one line of C, the system call it makes, the program's
 output and the packet that follows, all on one screen. The first three modes
 introduce those pieces one at a time.
+
+Without the script, the same thing is `docker compose run --rm <mode>` or
+`podman compose run --rm <mode>` (or `podman-compose run --rm <mode>`), where
+`<mode>` is `lab`, `strace`, `step` or `step_strace`.
 
 See [Watching system calls](#watching-system-calls-strace) and
 [Stepping through the code](#stepping-through-the-code-step).
@@ -206,7 +214,7 @@ a guess based on port 8080. The port does not define the protocol.
 strace mode:
 
 ```bash
-docker compose run --rm strace
+./lab.sh strace      # Windows: .\lab.cmd strace
 ```
 
 It is the same demo, but the server and client panes now show the real system
@@ -245,7 +253,7 @@ strace ./client                          # everything, including memory and file
 ## Stepping through the code (step)
 
 ```bash
-docker compose run --rm step
+./lab.sh step      # Windows: .\lab.cmd step
 ```
 
 The server and client run under the `gdb` debugger, which executes `main()` one
@@ -282,7 +290,7 @@ Too fast or too slow? In a pane, `Ctrl-C`, then for example `STEP_DELAY=1 ./step
 ### Code and system calls together (step_strace)
 
 ```bash
-docker compose run --rm step_strace
+./lab.sh step_strace      # Windows: .\lab.cmd step_strace
 ```
 
 Same as `step`, plus the system calls each line makes, right below it:
@@ -466,23 +474,26 @@ To restart the server, press `Ctrl-C` in its pane and run `./server`.
 | Zoom a pane to full size  | `Ctrl-b z` (again to unzoom)             |
 | Quit the lab              | `Ctrl-b d`                               |
 
-Quitting stops the container. The next `docker compose run --rm lab` starts fresh.
+Quitting stops the container. The next `./lab.sh` starts fresh.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---------|-----|
-| `docker: command not found` | Docker is not installed, or the terminal was opened before installing it. Install it and open a new terminal. |
-| `Cannot connect to the Docker daemon` / `error during connect` | Docker Desktop is not running. Start it and wait until it says it is running. With Podman on macOS/Windows: `podman machine start`. |
-| `the input device is not a TTY` (Windows) | You are in Git Bash. Use PowerShell or Windows Terminal, or put `winpty` in front: `winpty docker compose run --rm lab`. |
-| `no configuration file provided: not found` | You are not in the `socket-lab` folder. `cd` into it (it contains `compose.yaml`). |
-| `permission denied ... docker.sock` (Linux) | Run with `sudo`, or add yourself to the `docker` group ([how](https://docs.docker.com/engine/install/linux-postinstall/)). |
-| `podman compose` says it runs an external compose provider | That is normal. If it says no provider is found, install `podman-compose`. |
+| `./lab.sh: Permission denied` | The ZIP lost the "executable" bit. Run `bash lab.sh` instead. |
+| Windows: `.\lab.cmd` is not recognized | You are not in the `socket-lab` folder. `cd` into it (it contains `lab.cmd`). |
+| `This is Git Bash...` / `the input device is not a TTY` | Git Bash cannot run the lab. Use PowerShell or Windows Terminal and `.\lab.cmd`. |
+| `docker is installed but not running` | Start Docker Desktop and wait until it says it is running. Linux: `sudo systemctl start docker`. |
+| `podman is installed but not running` | macOS/Windows: `podman machine start` (the very first time `podman machine init` first). |
+| `permission denied ... docker.sock` (Linux) | Add yourself to the `docker` group ([how](https://docs.docker.com/engine/install/linux-postinstall/)), then log out and in. |
+| `compose is missing` | Docker: install the [Compose plugin](https://docs.docker.com/compose/install/) (Docker Desktop has it). Podman: install `podman-compose`. |
+| `cannot run a container` | Usually no internet for downloading the test image, or not enough disk space. The script shows the error. |
 | `Permission denied` on SELinux systems (Fedora, RHEL) | `compose.yaml` already sets `label=disable`. If you start the container another way, add `--security-opt label=disable`. |
-| `./packets: Permission denied` | The ZIP lost the "executable" bit. Run `bash start.sh` again (it fixes it), or `chmod +x packets trace step step_strace`. |
+| `./packets: Permission denied` | The ZIP lost the "executable" bit. Quit and start the lab again (it fixes it), or run `chmod +x packets trace step step_strace`. |
 | `cannot execute binary file: Exec format error` | `server`/`client` were built on your computer, not in the container. Run `make -B` inside the lab. |
 | The panes are tiny or garbled | Make the terminal window bigger *before* starting. `Ctrl-b z` zooms one pane. |
-| I closed the terminal window and the lab is still running | `docker ps` shows it. Stop it with `docker stop <the ID from docker ps>`. |
+| I closed the terminal window and the lab is still running | `docker ps` (or `podman ps`) shows it. Stop it with `docker stop <ID>` (or `podman stop <ID>`). |
+| I changed the `Dockerfile` | Rebuild the image: `docker compose build` (or `podman compose build`). |
 | `make clean` fails on Linux with "Permission denied" | Files built in the container belong to root. Run `make clean` inside the lab. |
 | `step` is too slow / too fast | `Ctrl-C` in the pane, then `STEP_DELAY=0.2 ./step ./server` (seconds per line). |
 
@@ -499,5 +510,7 @@ Quitting stops the container. The next `docker compose run --rm lab` starts fres
 | `step_strace` | the same, plus the system calls each line makes      |
 | `step.py`     | the gdb (Python) script behind `step` and `step_strace` |
 | `packets`     | runs tcpdump and prints one readable line per packet |
+| `lab.sh`      | starts the lab on macOS / Linux / WSL: finds a working Docker or Podman, then runs compose |
+| `lab.cmd`, `lab.ps1` | the same for Windows (`lab.cmd` only starts `lab.ps1`) |
 | `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2, netcat |
 | `compose.yaml`| runs the container and mounts this directory at `/lab` |

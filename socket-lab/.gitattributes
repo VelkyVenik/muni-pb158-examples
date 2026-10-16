@@ -1,2 +1,5 @@
 # Keep Unix line endings on Windows checkouts, otherwise bash and make break.
 * text=auto eol=lf
+# Windows scripts need Windows line endings, or cmd.exe misreads them.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

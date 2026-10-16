@@ -8,6 +8,9 @@ containers). README.md is the student-facing manual.
 ## Layout
 - `server.c`, `client.c` — the programs. Every comment is shown on screen by `step` mode,
   so comments are teaching text: keep them short, correct, beginner-level.
+- `lab.sh` (macOS/Linux/WSL, must work with bash 3.2) and `lab.cmd`→`lab.ps1` (Windows,
+  PowerShell 5.1 syntax: no `&&`, ternary, `??`) — host-side launchers: pick docker or podman
+  (installed, `info`, hello-world, compose), then `<compose> run --rm <mode>`. Keep them in sync.
 - `start.sh <demo|strace|step|step_strace>` — builds (`make -B`), creates tmux panes, starts
   packets → server → client in order. `compose.yaml` has one service per mode (`extends: lab`).
 - `packets` (tcpdump → perl), `trace` (strace → perl), `step`/`step_strace` (gdb + `step.py`).
@@ -26,4 +29,5 @@ containers). README.md is the student-facing manual.
 - Headless: `docker run --rm --init --cap-add NET_RAW -v "$PWD":/lab -w /lab socket-lab bash -c '...'`.
 - Real path: `docker run -dit ... bash start.sh <mode>`, then `docker exec <c> tmux capture-pane -p -t lab:0.<n>`.
 - Background jobs ignore SIGINT in non-interactive bash: use `kill` (TERM) to simulate Ctrl-C.
+- Launcher interactive test: `expect` script that waits for "Hello client!", sends `\002d`.
 - `nc` (openbsd) keeps the connection open after stdin EOF; use `-N` in scripts.
