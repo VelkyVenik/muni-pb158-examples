@@ -38,23 +38,27 @@ From the `socket-lab` folder:
 | **Windows** | PowerShell or Windows Terminal (not Git Bash) | `.\lab.cmd` |
 | **Windows, inside WSL** | your WSL terminal | `./lab.sh` |
 
-The script finds out whether Docker or Podman works on your computer. It checks that
-it is installed, that it is running, that it can run a test container (`hello-world`)
-and that it has `compose`. Then it starts the lab:
+The script finds a container engine that works on your computer: **Podman first, then
+Docker**. It checks that the engine is installed, that it is running (for example in
+your Lima VM), that it can run a test container (`hello-world`) and that it has
+`compose`. Then it starts the lab:
 
 ```text
-Checking docker...
+Checking podman...
   OK    installed
   OK    running
   OK    can run containers
-  OK    compose (docker compose)
+  OK    compose (podman-compose)
 
-Starting:  docker compose run --rm lab
+Starting:  podman-compose run --rm lab
 ```
 
-If a check fails, the script tells you what to do (for example "Start Docker Desktop" or
-`podman machine start`). If you have both and want Podman, run `LAB_ENGINE=podman ./lab.sh`
-(PowerShell: `$env:LAB_ENGINE="podman"; .\lab.cmd`).
+If a check fails, the script tells you what to do (for example `limactl start <name>`).
+If you have both and want Docker, run `LAB_ENGINE=docker ./lab.sh`
+(PowerShell: `$env:LAB_ENGINE="docker"; .\lab.cmd`).
+
+**With Lima, keep the `socket-lab` folder inside your home folder.** Lima's VM only sees
+your home folder. The lab only *reads* your files, so Lima's default read-only sharing is fine.
 
 The first start builds the lab image, which takes a few minutes. After that it starts
 in seconds. The demo then **runs by itself**: the server starts, waits, and two
@@ -452,8 +456,10 @@ Close the extra pane with `exit`.
 
 ### Changing the code
 
-Your local files are mounted into the container. Edit `server.c` or `client.c` in
-your usual editor on your computer, then **inside the lab** run:
+The lab only *reads* your files: it never writes to your computer. It builds the
+programs in its own folder, `/work`, where `server.c`, `client.c` and the `Makefile`
+are links to your files. Edit `server.c` or `client.c` in your usual editor on your
+computer, then **inside the lab** run:
 
 ```bash
 make                  # rebuild server and client
@@ -483,19 +489,17 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `./lab.sh: Permission denied` | The ZIP lost the "executable" bit. Run `bash lab.sh` instead. |
 | Windows: `.\lab.cmd` is not recognized | You are not in the `socket-lab` folder. `cd` into it (it contains `lab.cmd`). |
 | `This is Git Bash...` / `the input device is not a TTY` | Git Bash cannot run the lab. Use PowerShell or Windows Terminal and `.\lab.cmd`. |
-| `docker is installed but not running` | Start Docker Desktop and wait until it says it is running. Linux: `sudo systemctl start docker`. |
-| `podman is installed but not running` | macOS/Windows: `podman machine start` (the very first time `podman machine init` first). |
+| `docker is installed but not running` | Lima: `limactl start <name>`, and check that your docker context points to it (`docker context ls`). Docker Desktop: start it. Linux: `sudo systemctl start docker`. |
+| `podman is installed but not running` | Lima: `limactl list` shows your VMs, start yours with `limactl start <name>`. Podman Desktop / podman machine: `podman machine start`. |
+| `error while creating mount source path`, `statfs ...: no such file or directory` or `bash: start.sh: No such file or directory` | The container cannot see your folder. With Lima, move `socket-lab` into your home folder (`./lab.sh` warns about this). |
 | `permission denied ... docker.sock` (Linux) | Add yourself to the `docker` group ([how](https://docs.docker.com/engine/install/linux-postinstall/)), then log out and in. |
 | Linux + Podman: `podman compose` fails with "Cannot connect" | Install `podman-compose` (the script then uses it), or start Podman's socket: `systemctl --user enable --now podman.socket`. |
 | `compose is missing` | Docker: install the [Compose plugin](https://docs.docker.com/compose/install/) (Docker Desktop has it). Podman: install `podman-compose`. |
 | `cannot run a container` | Usually no internet for downloading the test image, or not enough disk space. The script shows the error. |
 | `Permission denied` on SELinux systems (Fedora, RHEL) | `compose.yaml` already sets `label=disable`. If you start the container another way, add `--security-opt label=disable`. |
-| `./packets: Permission denied` | The ZIP lost the "executable" bit. Quit and start the lab again (it fixes it), or run `chmod +x packets trace step step_strace`. |
-| `cannot execute binary file: Exec format error` | `server`/`client` were built on your computer, not in the container. Run `make -B` inside the lab. |
 | The panes are tiny or garbled | Make the terminal window bigger *before* starting. `Ctrl-b z` zooms one pane. |
 | I closed the terminal window and the lab is still running | `docker ps` (or `podman ps`) shows it. Stop it with `docker stop <ID>` (or `podman stop <ID>`). |
 | I changed the `Dockerfile` | Rebuild the image: `docker compose build` (or `podman compose build`). |
-| `make clean` fails on Linux with "Permission denied" | Files built in the container belong to root. Run `make clean` inside the lab. |
 | `step` is too slow / too fast | `Ctrl-C` in the pane, then `STEP_DELAY=0.2 ./step ./server` (seconds per line). |
 
 ## Files
@@ -505,13 +509,13 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `server.c`    | the server                                           |
 | `client.c`    | the client                                           |
 | `Makefile`    | builds both with `-g -O0 -Wall -Wextra -Wpedantic`   |
-| `start.sh`    | builds, creates the tmux layout, starts everything (`bash start.sh strace` / `step` / `step_strace` for the other modes) |
+| `start.sh`    | runs inside the container: builds in `/work`, creates the tmux layout, starts everything (`bash start.sh strace` / `step` / `step_strace` for the other modes) |
 | `trace`       | runs a program under strace and highlights the system calls |
 | `step`        | runs a program under gdb, printing each line of C code as it runs |
 | `step_strace` | the same, plus the system calls each line makes      |
 | `step.py`     | the gdb (Python) script behind `step` and `step_strace` |
 | `packets`     | runs tcpdump and prints one readable line per packet |
-| `lab.sh`      | starts the lab on macOS / Linux / WSL: finds a working Docker or Podman, then runs compose |
+| `lab.sh`      | starts the lab on macOS / Linux / WSL: finds a working Podman or Docker, then runs compose |
 | `lab.cmd`, `lab.ps1` | the same for Windows (`lab.cmd` only starts `lab.ps1`) |
 | `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2, netcat |
 | `compose.yaml`| runs the container and mounts this directory at `/lab` |

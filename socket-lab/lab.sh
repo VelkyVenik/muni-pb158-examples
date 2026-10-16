@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Start socket-lab with whichever container engine works on this computer,
-# Docker or Podman. For each one it checks that
+# Start socket-lab with whichever container engine works on this computer:
+# Podman first, then Docker. For each one it checks that
 #
 #   1. it is installed,
 #   2. it is running,
@@ -11,7 +11,7 @@
 # and then runs:   <engine> compose run --rm <mode>
 #
 #   usage: ./lab.sh [lab|strace|step|step_strace]      (default: lab)
-#          LAB_ENGINE=podman ./lab.sh                   (use only Podman)
+#          LAB_ENGINE=docker ./lab.sh                   (use only Docker)
 #
 # macOS, Linux and WSL. On Windows, run lab.cmd instead.
 
@@ -44,12 +44,29 @@ if [ "$OS" = Linux ] && grep -qi microsoft /proc/version 2>/dev/null; then
     OS=WSL
 fi
 
+# Lima (limactl) runs Docker or Podman in a Linux VM. Since Lima 2.0 that VM
+# only sees your home folder, so the lab folder must be inside it.
+if command -v limactl >/dev/null 2>&1; then
+    case "$PWD/" in
+        "$HOME"/*) ;;
+        *)  echo "Warning: this folder ($PWD) is outside your home folder."
+            echo "With Lima, containers cannot see it. Move it into your home folder, e.g. ~/socket-lab."
+            echo ;;
+    esac
+fi
+
 # Hide podman's "Executing external compose provider" warning.
 export PODMAN_COMPOSE_WARNING_LOGS=false
 
 # What to do when the engine is installed but not running.
 not_running_hint() {
-    local engine=$1 error=$2
+    local engine=$1 error=$2 stopped
+    if command -v limactl >/dev/null 2>&1; then
+        stopped=$(limactl list --format '{{.Name}} {{.Status}}' 2>/dev/null | awk '$2 != "Running" { printf " %s", $1 }')
+        echo "If it runs in Lima, start its VM:  limactl start <name>
+        (stopped Lima VMs:${stopped:- none}; all of them: limactl list)"
+        return
+    fi
     case "$engine/$OS" in
         docker/Darwin) echo "Start Docker Desktop and wait until it says it is running." ;;
         docker/WSL)    echo "Start Docker Desktop in Windows. In its Settings > Resources > WSL integration,
@@ -118,7 +135,7 @@ check() {
     return 0
 }
 
-ENGINES="${LAB_ENGINE:-docker podman}"
+ENGINES="${LAB_ENGINE:-podman docker}"
 REASONS=()
 for engine in $ENGINES; do
     if check "$engine"; then

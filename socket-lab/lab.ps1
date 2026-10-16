@@ -2,11 +2,11 @@
 #
 #   .\lab.cmd [lab|strace|step|step_strace]      (default: lab)
 #
-# Finds a working container engine, Docker or Podman. For each one it checks
+# Finds a working container engine: Podman first, then Docker. For each one it checks
 # that it is installed, running, can run a container ("hello-world") and has
 # "compose", then runs:   <engine> compose run --rm <mode>
 #
-# Set LAB_ENGINE=podman to use only Podman.
+# Set LAB_ENGINE=docker to use only Docker.
 # Written for Windows PowerShell 5.1, which every Windows 10/11 has.
 
 param([string]$Mode = "lab")
@@ -82,7 +82,7 @@ function Check($engine) {
     return ,$compose
 }
 
-if ($env:LAB_ENGINE) { $engines = $env:LAB_ENGINE -split "\s+" } else { $engines = @("docker", "podman") }
+if ($env:LAB_ENGINE) { $engines = $env:LAB_ENGINE -split "\s+" } else { $engines = @("podman", "docker") }
 
 $reasons = @()
 foreach ($engine in $engines) {

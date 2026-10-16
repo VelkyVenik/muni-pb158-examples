@@ -65,11 +65,24 @@ wait_for() {
     return 1
 }
 
-# 1. Build. -B rebuilds even if server/client exist: they may have been
-# built on your own computer (macOS, Windows) and would not run here.
-# chmod: a ZIP download or a Windows checkout can lose the "executable" bit.
-chmod +x packets trace step step_strace 2>/dev/null || true
-make -B
+# 1. Build in a working folder inside the container. Your lab folder is
+# shared read-only, so nothing is ever written to your computer. The .c files
+# and the Makefile here are links to yours: edit them on your computer, then
+# run "make" in the lab. The helper scripts are copied, so they are always
+# executable (a ZIP download can lose that).
+SRC="$PWD"
+WORK=/work
+rm -rf "$WORK"
+mkdir -p "$WORK"
+for f in "$SRC"/*.c "$SRC"/Makefile "$SRC"/step.py; do
+    ln -s "$f" "$WORK/"
+done
+for f in packets trace step step_strace; do
+    cp "$SRC/$f" "$WORK/$f"
+    chmod +x "$WORK/$f"
+done
+cd "$WORK"
+make
 
 # 2. Start from a clean slate.
 tmux kill-session -t "$SESSION" 2>/dev/null || true

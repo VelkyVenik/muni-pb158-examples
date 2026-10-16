@@ -3,10 +3,10 @@ services:
     build: .
     image: socket-lab
     hostname: lab
-    # Your local checkout is mounted here: edit files on your machine,
-    # rebuild and rerun inside the container.
+    # Your local checkout is shared here read-only: edit files on your
+    # machine, then run "make" inside. The programs are built in /work.
     volumes:
-      - .:/lab
+      - .:/lab:ro
     # Lets the container read the mounted files on Linux hosts with SELinux
     # (Fedora, RHEL). Has no effect elsewhere.
     security_opt:

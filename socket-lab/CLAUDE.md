@@ -9,9 +9,10 @@ containers). README.md is the student-facing manual.
 - `server.c`, `client.c` — the programs. Every comment is shown on screen by `step` mode,
   so comments are teaching text: keep them short, correct, beginner-level.
 - `lab.sh` (macOS/Linux/WSL, must work with bash 3.2) and `lab.cmd`→`lab.ps1` (Windows,
-  PowerShell 5.1 syntax: no `&&`, ternary, `??`) — host-side launchers: pick docker or podman
+  PowerShell 5.1 syntax: no `&&`, ternary, `??`) — host-side launchers: pick podman, then docker
   (installed, `info`, hello-world, compose), then `<compose> run --rm <mode>`. Keep them in sync.
-- `start.sh <demo|strace|step|step_strace>` — builds (`make -B`), creates tmux panes, starts
+- `start.sh <demo|strace|step|step_strace>` — builds in container-local `/work` (symlinks to
+  `/lab` sources, which is mounted `:ro`: never write to the host mount), creates tmux panes, starts
   packets → server → client in order. `compose.yaml` has one service per mode (`extends: lab`).
 - `packets` (tcpdump → perl), `trace` (strace → perl), `step`/`step_strace` (gdb + `step.py`).
 
@@ -25,7 +26,8 @@ containers). README.md is the student-facing manual.
 - README line-number examples (`│  77 ...`) must match `server.c`/`client.c` after edits.
 - Every predicted outcome in README "Experiments" must be verified in the container.
 
-## Testing (podman/docker via Lima on the maintainer's Mac)
+## Testing (podman/docker via Lima on the maintainer's Mac; students use Lima too)
+- Stock Lima templates share `~` read-only and nothing outside `~` (Lima ≥ 2.0).
 - Headless: `docker run --rm --init --cap-add NET_RAW -v "$PWD":/lab -w /lab socket-lab bash -c '...'`.
 - Real path: `docker run -dit ... bash start.sh <mode>`, then `docker exec <c> tmux capture-pane -p -t lab:0.<n>`.
 - Background jobs ignore SIGINT in non-interactive bash: use `kill` (TERM) to simulate Ctrl-C.
