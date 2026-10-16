@@ -54,10 +54,11 @@ case "$MODE" in
         ;;
 esac
 
-# Wait (max 30 s) until a command succeeds. If it never does (e.g. the
-# server is stopped in gdb), the demo just goes on.
+# Wait (max 2 min) until a command succeeds. In step modes the server needs
+# a while to reach listen(), more on slow computers. If it never succeeds
+# (e.g. the server is stopped in gdb), the demo just goes on.
 wait_for() {
-    for _ in $(seq 300); do
+    for _ in $(seq 1200); do
         if eval "$1" >/dev/null 2>&1; then return 0; fi
         sleep 0.1
     done

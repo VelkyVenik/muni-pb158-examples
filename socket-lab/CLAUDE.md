@@ -18,7 +18,7 @@ containers). README.md is the student-facing manual.
 - `step.py`: never hand control back to the main loop while stopped in a libc frame (the
   "no symtab → continue" guard would let the program run free). Syscall results are read
   at the *return* catchpoint (raw kernel value, -errno on failure), not after `finish`.
-- Adding C lines makes `step` mode slower; prefer README text over extra code.
+- Adding C lines *and comment lines* makes `step` mode slower (start.sh waits max 2 min for listen); prefer README text over extra code.
 - README line-number examples (`│  77 ...`) must match `server.c`/`client.c` after edits.
 - Every predicted outcome in README "Experiments" must be verified in the container.
 

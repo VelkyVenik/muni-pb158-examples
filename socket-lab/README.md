@@ -333,7 +333,8 @@ client again in the CLIENT pane (click it first) at any time:
 ./client
 ```
 
-Try the experiments below in the plain `lab` mode first, then in `strace` mode.
+Try the experiments below in the plain `lab` mode first, then in `strace` mode
+(there, use `./trace ./client` and `./trace ./server` to see the system calls).
 **Guess the result before you look**, then open the answer.
 
 ### 1. Two clients at once
@@ -341,10 +342,10 @@ Try the experiments below in the plain `lab` mode first, then in `strace` mode.
 In the CLIENT pane run:
 
 ```bash
-./client > /dev/null & ./client
+./client > /dev/null & sleep 1; ./client
 ```
 
-This starts one client in the background (its output is thrown away) and a second one right after it.
+This starts one client in the background (its output is thrown away) and a second one a second later.
 The server handles one client at a time. What happens to the second client's `connect()`?
 Watch the PACKETS pane.
 
