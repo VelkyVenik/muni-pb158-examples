@@ -49,7 +49,7 @@ From the `socket-lab` folder:
 The script finds a container engine that works on your computer: **Podman first, then
 Docker**. It checks that the engine is installed, that it is running (for example in
 your Lima VM), that it can run a test container (`hello-world`) and that it has
-`compose`. Then it starts the lab:
+`compose`. Then it asks which part of the lab to start:
 
 ```text
 Checking podman...
@@ -58,8 +58,20 @@ Checking podman...
   OK    can run containers
   OK    compose (podman-compose)
 
-Starting:  podman-compose run --rm lab
+Which part of the lab do you want to start?
+
+  1) lab          program output + system calls + packets, in slow motion
+  2) step_strace  you step through the C code, with system calls + packets
+  3) step         you step through the C code, with packets
+  4) nc           you are the client: type messages to the server yourself
+  5) plain        program output + packets, at full speed
+
+Choose 1-5 (Enter = 1):
 ```
+
+Type a number and press Enter (just Enter starts `lab`). The modes are explained in the
+next section. To skip the question, give the mode right away: `./lab.sh nc`
+(Windows: `.\lab.cmd nc`).
 
 If a check fails, the script tells you what to do (for example `limactl start <name>`).
 If you have both and want Docker, run `LAB_ENGINE=docker ./lab.sh`
@@ -69,32 +81,34 @@ If you have both and want Docker, run `LAB_ENGINE=docker ./lab.sh`
 your home folder. The lab only *reads* your files, so Lima's default read-only sharing is fine.
 
 The first start builds the lab image, which takes a few minutes. After that it starts
-in seconds. The demo then **runs by itself, in slow motion**: the server starts and waits,
-then the client connects. After every socket call the program pauses for a second, so you
-can follow each step in all three panes.
+in seconds. In `lab` mode the demo then **runs by itself, in slow motion**: the server starts
+and waits, then the client connects. After every socket call the program pauses for a second,
+so you can follow each step in all three panes.
 
 > **To quit, press `Ctrl-b`, release it, then press `d`.** This closes the lab and
 > stops the container. See [tmux basics](#tmux-basics) for more keys.
 
-## 3. The four modes
+## 3. The five modes
 
-Each mode is the same conversation with a different amount of detail
-(on Windows, `.\lab.cmd step` and so on):
+Each mode is the same conversation with a different amount of detail. Choose one in the
+menu, or start it directly (on Windows, `.\lab.cmd step` and so on):
 
 | Command | Shows | You control the pace? |
 |---------|-------|-----------------------|
-| `./lab.sh` | program output + system calls (`strace`) + packets | no, slow motion (1 s after each socket call) |
-| `./lab.sh step` | the C code line by line (`gdb`) + program output + packets | **yes, with the keyboard** |
+| `./lab.sh lab` | program output + system calls (`strace`) + packets | no, slow motion (1 s after each socket call) |
 | `./lab.sh step_strace` | C lines + system calls + program output + packets | **yes, with the keyboard** |
+| `./lab.sh step` | the C code line by line (`gdb`) + program output + packets | **yes, with the keyboard** |
+| `./lab.sh nc` | **you are the client**: you type, the server answers (system calls + packets) | **yes, you type the messages** |
 | `./lab.sh plain` | only program output + packets | no, full speed |
 
-Start with `./lab.sh` to get the big picture. Then use `step_strace`, where **you**
+Start with `lab` to get the big picture. Then use `step_strace`, where **you**
 press Enter to run each socket call, on the server and the client in turn, and watch
 what it does at every level. See [Stepping through the code](#stepping-through-the-code-step).
+In `nc` mode you take the client's place yourself, see [You are the client](#you-are-the-client-nc).
 
 Without the script, the same thing is `docker compose build lab` and then
 `docker compose run --rm <mode>` (or `podman compose` / `podman-compose`), where
-`<mode>` is `lab`, `step`, `step_strace` or `plain`.
+`<mode>` is `lab`, `step_strace`, `step`, `nc` or `plain`.
 
 ## What you are looking at
 
@@ -257,8 +271,8 @@ a guess based on port 8080. The port does not define the protocol.
 
 ## Watching system calls (strace)
 
-`strace` shows every call a program makes into the kernel. The default mode
-(`./lab.sh`) runs the server and client under it, through `./trace`, so the panes show
+`strace` shows every call a program makes into the kernel. The `lab` mode
+(`./lab.sh lab`, or 1 in the menu) runs the server and client under it, through `./trace`, so the panes show
 the real system calls (marked `│` and coloured) right below each `printf`:
 
 ```text
@@ -393,6 +407,30 @@ The top half shows the source with the current line highlighted. Useful commands
 Step over `accept()` with `n` and gdb seems to freeze. It is waiting for a client.
 Run `./client` in the CLIENT pane and watch the line complete.
 
+## You are the client (nc)
+
+```bash
+./lab.sh nc      # Windows: .\lab.cmd nc
+```
+
+The server runs as in `lab` mode, but the CLIENT pane runs `nc` (netcat) instead of `./client`.
+`nc` connects to the server and sends whatever you type. The keyboard is already in the
+CLIENT pane:
+
+1. Type a line, for example `hello`, and press **Enter**. Watch the `DATA` packet with your
+   text, and the server's `recvfrom()` returning it. Count the bytes: Enter adds a `\n`.
+2. A few seconds later the server answers `Hello client!`.
+3. Press **Ctrl-D** to hang up. `nc` closes its side: watch the `FIN` packets, the server's
+   `recvfrom()` returning `0` and its `open fds:` going back to just the listening socket.
+4. **Up arrow** and **Enter** start `nc` again. Look at the client port in the packets:
+   every new connection gets a new one.
+
+The server cannot tell that you are not `./client`. It only sees bytes arriving on fd 4.
+
+`nc`'s own system calls are not shown: it uses `read()` and `write()` instead of `recv()`
+and `send()`, which work on sockets too. To see them, press `Ctrl-C` and run
+`strace -e trace=connect,read,write,close nc -N 127.0.0.1 8080`.
+
 ## Experiments
 
 The server keeps running and waits for the next client, so you can run the
@@ -427,15 +465,10 @@ Run `./run ./client` and press `Ctrl-C` while it says `sleeping 2 s before sendi
 
 **Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
-### 3. Be the client yourself
+### 3. Hang up without saying goodbye
 
-`nc` (netcat) is a ready-made program that connects to a server and sends whatever you type:
-
-```bash
-nc 127.0.0.1 8080
-```
-
-Type `hello`, press Enter and wait. Then press `Ctrl-C` to quit `nc`.
+Start `./lab.sh nc`, type `hello` and press Enter. When the answer is there, press **Ctrl-C**
+instead of Ctrl-D. What do the packets and the server show? Is it different from Ctrl-D?
 
 **Answer:** in [Answers](#answers) at the end of this file. Guess first!
 
@@ -512,7 +545,7 @@ Quitting stops the container. The next `./lab.sh` starts fresh.
 | `Permission denied` on SELinux systems (Fedora, RHEL) | `compose.yaml` already sets `label=disable`. If you start the container another way, add `--security-opt label=disable`. |
 | The panes are tiny or garbled | Make the terminal window bigger *before* starting. `Ctrl-b z` zooms one pane. |
 | I closed the terminal window and the lab is still running | `docker ps` (or `podman ps`) shows it. Stop it with `docker stop <ID>` (or `podman stop <ID>`). |
-| Too slow / too fast | Default mode: `LAB_DELAY=0.3 ./trace ./client` (seconds after each socket call). Step modes: press `c` to run, `STEP_DELAY=0.2 ./step ./server` sets the speed. |
+| Too slow / too fast | `lab` and `nc` modes: `LAB_DELAY=0.3 ./trace ./client` (seconds after each socket call). Step modes: press `c` to run, `STEP_DELAY=0.2 ./step ./server` sets the speed. |
 | Step mode: nothing happens | The program waits at `⏸` for a key *in its own pane*. Click that pane, then press Enter. |
 
 ## Files
@@ -566,14 +599,14 @@ The server's first `recv()` returns `0` (`client closed the connection`).
 The client never called `close()`. When a program ends, for whatever reason, the kernel
 closes all its file descriptors, and closing a TCP socket sends a `FIN`.
 
-### Experiment 3. Be the client yourself
+### Experiment 3. Hang up without saying goodbye
 
-The server receives `"hello\n"`, **6 bytes**: Enter adds a newline character (`\n`).
-You see `Hello client!` as the reply. Then nothing happens until you press `Ctrl-C`,
-because the server waits for the client to close the connection.
+It looks exactly the same: a `FIN` from the client, the server's `recvfrom()` returns `0`,
+the server closes fd 4 and sends its own `FIN`.
 
-The server does not know or care that the other side is not `./client`. A protocol is only
-an agreement about which bytes go back and forth.
+Ctrl-C does not let `nc` close anything, it just ends the program. But when a program ends,
+for whatever reason, the **kernel** closes all its file descriptors, and closing a TCP socket
+sends a `FIN`. The server cannot tell the difference. (Experiment 2 shows the same with `./client`.)
 
 ### Experiment 4. A message bigger than the buffer
 

@@ -22,6 +22,11 @@ services:
     # Program output + system calls (strace) + packets.
     command: ["bash", "start.sh", "strace"]
 
+  # You are the client: nc in the CLIENT pane, you type the messages.
+  nc:
+    extends: lab
+    command: ["bash", "start.sh", "nc"]
+
   # Only the program output and the packets.
   plain:
     extends: lab

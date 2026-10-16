@@ -11,24 +11,30 @@
 # and then runs:   <engine> compose build lab      (quick when nothing changed)
 #                  <engine> compose run --rm <mode>
 #
-#   usage: ./lab.sh [lab|plain|step|step_strace]       (default: lab)
-#          LAB_ENGINE=docker ./lab.sh                   (use only Docker)
+#   usage: ./lab.sh                   shows a menu of the modes
+#          ./lab.sh <mode>            starts that mode: lab, step_strace, step, nc, plain
+#          LAB_ENGINE=docker ./lab.sh (use only Docker)
 #
 # macOS, Linux and WSL. On Windows, run lab.cmd instead.
 
 set -u
 cd "$(dirname "$0")"
 
-MODES="lab plain step step_strace"
-MODE="${1:-lab}"
-case " $MODES " in
-    *" $MODE "*) ;;
-    *)
-        echo "Unknown mode: $MODE"
-        echo "Usage: ./lab.sh [${MODES// /|}]"
-        exit 2
-        ;;
-esac
+# The modes, in the order of the menu.
+MODES="lab step_strace step nc plain"
+DESCRIPTIONS=(
+    "program output + system calls + packets, in slow motion"
+    "you step through the C code, with system calls + packets"
+    "you step through the C code, with packets"
+    "you are the client: type messages to the server yourself"
+    "program output + packets, at full speed"
+)
+MODE="${1:-}"            # empty: the menu asks for it later
+if [ -n "$MODE" ] && [[ " $MODES " != *" $MODE "* ]]; then
+    echo "Unknown mode: $MODE"
+    echo "Usage: ./lab.sh [${MODES// /|}]"
+    exit 2
+fi
 
 if [ -n "${MSYSTEM:-}" ]; then
     echo "This is Git Bash, where the lab cannot use the terminal properly."
@@ -136,11 +142,42 @@ check() {
     return 0
 }
 
+# Ask which mode to start. Without a terminal to ask in, start "lab".
+choose_mode() {
+    local modes=($MODES) i choice
+    if [ ! -t 0 ]; then
+        MODE=lab
+        return
+    fi
+    echo "Which part of the lab do you want to start?"
+    echo
+    for i in "${!modes[@]}"; do
+        printf "  %d) %-12s %s\n" $((i + 1)) "${modes[i]}" "${DESCRIPTIONS[i]}"
+    done
+    echo
+    while :; do
+        read -r -p "Choose 1-${#modes[@]} (Enter = 1): " choice || exit 1
+        choice="${choice:-1}"
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#modes[@]}" ]; then
+            MODE="${modes[choice - 1]}"
+        elif [[ " $MODES " == *" $choice "* ]]; then
+            MODE="$choice"
+        else
+            continue
+        fi
+        break
+    done
+    echo
+    echo "${DIM}(Next time you can start it directly:  ./lab.sh $MODE)${OFF}"
+    echo
+}
+
 ENGINES="${LAB_ENGINE:-podman docker}"
 REASONS=()
 for engine in $ENGINES; do
     if check "$engine"; then
         echo
+        [ -n "$MODE" ] || choose_mode
         if [ ! -t 0 ] || [ ! -t 1 ]; then
             echo "Warning: this is not an interactive terminal, the lab may not start."
         fi

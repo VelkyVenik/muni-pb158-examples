@@ -17,7 +17,8 @@ containers). README.md is the student-facing manual.
 - `packets` (tcpdump → perl), `trace` (strace → perl, `LAB_DELAY` slow motion via `inject=...:delay_exit`),
   `step`/`step_strace` (gdb + `step.py`, keyboard pacing via /dev/tty, echo off), `run`. All panes
   share one clock: `LAB_T0` (exported by start.sh) and `stamp` (timestamps + SERVER/CLIENT colours).
-- Modes: `lab` (default) = strace mode, `plain`, `step`, `step_strace`. Launchers run `compose build lab` first.
+- Modes (menu order): `lab` = strace mode, `step_strace`, `step`, `nc` (nc -N in CLIENT pane,
+  focus there), `plain`. `./lab.sh` without an argument shows a menu (lab.sh and lab.ps1). Launchers run `compose build lab` first.
 - Colours (keep `trace`, `step.py`, `packets`, tmux legend in start.sh in sync): yellow 33 setup
   (connect/accept, SYN), magenta 35 data→server, cyan 36 data→client, red 31 closing (socket close,
   recvfrom=0, errors, FIN/RST), grey 2 local (no packet). Side of an fd: connect→client, accept→server.

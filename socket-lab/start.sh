@@ -12,6 +12,7 @@
 #         bash start.sh plain         program output + packets only
 #         bash start.sh step          the C code line by line (gdb), you control the pace
 #         bash start.sh step_strace   step + the system calls each line makes
+#         bash start.sh nc            you are the client: nc in the CLIENT pane
 #
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -23,6 +24,7 @@ export TERM="${TERM:-xterm-256color}"   # tmux refuses to start without it
 
 # What runs in each pane. Later exercises can swap these, e.g. "gdb ./server".
 TCPDUMP_CMD="./packets"   # tcpdump, one readable line per packet
+CLIENT_INTRO=""           # a command to run in the CLIENT pane first (nc mode)
 
 case "$MODE" in
     strace)
@@ -30,6 +32,15 @@ case "$MODE" in
         CLIENT_CMD="./trace ./client"
         SERVER_TITLE="SERVER (output + system calls)"
         CLIENT_TITLE="CLIENT (output + system calls)"
+        ;;
+    nc)
+        SERVER_CMD="./trace ./server"
+        # nc (netcat) connects and sends what you type. -N: Ctrl-D hangs up (sends FIN).
+        # The final echo puts the prompt on a new line ("Hello client!" has no \n).
+        CLIENT_INTRO="clear; echo 'You are the client. Type a line and press Enter.'; echo 'Ctrl-D hangs up. Up arrow + Enter connects again.'"
+        CLIENT_CMD="nc -N 127.0.0.1 $PORT; echo"
+        SERVER_TITLE="SERVER (output + system calls)"
+        CLIENT_TITLE="CLIENT: you, with nc"
         ;;
     plain)
         SERVER_CMD="./run ./server"     # just the program, with timestamps
@@ -50,7 +61,7 @@ case "$MODE" in
         CLIENT_TITLE="CLIENT (step + syscalls)"
         ;;
     *)
-        echo "unknown mode: $MODE (use: strace, plain, step, step_strace)" >&2
+        echo "unknown mode: $MODE (use: strace, plain, step, step_strace, nc)" >&2
         exit 1
         ;;
 esac
@@ -129,7 +140,13 @@ tmux select-pane -t "$server"
     wait_for '[ -n "$(ss -H -ltn "sport = :$PORT")" ]' || true  # server listening
 
     sleep 2   # let students see the server blocked in accept()
+    if [ -n "$CLIENT_INTRO" ]; then
+        tmux send-keys -t "$client" "$CLIENT_INTRO" Enter
+        sleep 0.5   # let it finish, so the next command is not typed in the middle of it
+    fi
     tmux send-keys -t "$client" "$CLIENT_CMD" Enter
+    # In nc mode you type in the CLIENT pane, so put the keyboard there.
+    if [ "$MODE" = nc ]; then tmux select-pane -t "$client"; fi
 ) >/dev/null 2>&1 &
 
 # 7. Hand the terminal over to tmux.
