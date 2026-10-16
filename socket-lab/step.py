@@ -26,8 +26,7 @@ import gdb
 DELAY = float(os.environ.get("STEP_DELAY", "0.5"))     # seconds per line
 SHOW_SYSCALLS = os.environ.get("STEP_SYSCALLS") == "1"
 SYSCALLS = ["socket", "setsockopt", "bind", "listen", "accept", "accept4",
-            "connect", "getsockname", "sendto", "recvfrom", "close"]
-INT_RESULT = {"sendto": False, "recvfrom": False}      # these return ssize_t, the rest int
+            "connect", "getsockname", "sendto", "recvfrom", "close", "dup"]
 
 BAR = "\033[1;32m│\033[0m"
 NUM, CODE, NAME, DATA, OK, ERR, OFF = (
@@ -123,10 +122,8 @@ def args_at_return(name, a, result):
     return ""
 
 
-def signed(value, name):
-    bits = 32 if INT_RESULT.get(name, True) else 64
-    value &= (1 << bits) - 1
-    return value - (1 << bits) if value >> (bits - 1) else value
+def signed(value):
+    return value - (1 << 64) if value >> 63 else value
 
 
 def show_syscall(name):
@@ -136,20 +133,42 @@ def show_syscall(name):
     # No newline yet: if the call blocks, this unfinished line stays on screen.
     say("      ↳ %s%s%s(%s" % (NAME, name, OFF, args_at_entry(name, a)))
 
-    # Run until the C library function (accept(), recv(), ...) returns to main().
-    while gdb.selected_inferior().pid and gdb.selected_frame().name() != "main":
-        run("finish")
+    # "catch syscall" stops the program twice: when it enters the kernel
+    # (now) and when the kernel returns. Run until that return.
+    run("continue")
     if not gdb.selected_inferior().pid:
         say(")\n")
         return
 
-    result = signed(register(result_reg), name)
+    # The kernel's own result: 0 or more on success, minus an errno code on
+    # failure (the C library turns that into -1 and sets errno).
+    result = signed(register(result_reg))
     if result >= 0:
         shown = OK + str(result) + OFF
     else:
-        code = int(gdb.parse_and_eval("*(int *) __errno_location()"))
+        code = -result
         shown = ERR + "-1 %s (%s)" % (errno.errorcode.get(code, code), os.strerror(code)) + OFF
     say("%s) = %s\n" % (args_at_return(name, a, result), shown))
+
+
+def back_to_main():
+    """Run until the C library function (accept(), recv(), perror(), ...) returns
+    to main(). It may make more system calls on the way: show those too."""
+    while gdb.selected_inferior().pid and gdb.selected_frame().name() != "main":
+        last_stop.clear()
+        run("finish")
+        while last_stop and gdb.selected_inferior().pid:
+            show_syscall(last_stop.pop())
+            last_stop.clear()
+
+
+def at_start_of_new_line():
+    """True if the program stands at the first instruction of a line not shown yet."""
+    if not gdb.selected_inferior().pid:
+        return False
+    frame = gdb.selected_frame()
+    sal = frame.find_sal()
+    return sal.symtab is not None and sal.pc == frame.pc() and sal.line != previous_line[0]
 
 
 # --- stepping -----------------------------------------------------------------
@@ -274,7 +293,10 @@ try:
         # A system call stops "next" half way. Show it, then finish the line.
         while last_stop and gdb.selected_inferior().pid:
             show_syscall(last_stop.pop())
+            back_to_main()
             last_stop.clear()
+            if at_start_of_new_line():
+                break            # e.g. setsockopt(...); returns right onto the next line
             run("next")
 except (Interrupted, KeyboardInterrupt, gdb.error):
     pass

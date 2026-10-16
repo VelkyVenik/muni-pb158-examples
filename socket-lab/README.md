@@ -1,32 +1,79 @@
 # socket-lab
 
-A TCP server and client in C, talking to each other over loopback, while
-`tcpdump` shows every packet they exchange. Optionally, `strace` shows every
-system call, or `gdb` steps through the code line by line. Everything runs inside one
-Linux container, so it behaves the same on Windows, macOS and Linux.
+Two small C programs, a **server** and a **client**, talk to each other over a TCP
+socket. While they do, you watch the same conversation at three levels at once:
 
-## Running
+| Level | What you see | Tool |
+|-------|--------------|------|
+| **Your program** | what the C code does, line by line, and what it prints | `printf`, `gdb` |
+| **The kernel boundary** | every *system call* the program makes into the operating system | `strace` |
+| **The network** | every TCP packet that the kernel puts on the wire | `tcpdump` |
 
-You only need Docker (or Podman).
+Everything runs inside one Linux container, so it works the same on Windows,
+macOS and Linux, and you cannot break anything on your own computer.
+
+## 1. One-time setup
+
+You need a **container engine**: a program that runs a small Linux system
+(a *container*) on your computer. Use **Docker Desktop** unless you already have Podman.
+
+| Your computer | Install | Notes |
+|---------------|---------|-------|
+| **Windows 10/11** | [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) | Choose the WSL 2 backend (the default) and restart when asked. Use **PowerShell** or **Windows Terminal**, not Git Bash (see [Troubleshooting](#troubleshooting)). |
+| **macOS** | [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) | Pick the Apple Silicon or Intel download to match your Mac. Use the **Terminal** app. |
+| **Linux** | [Docker Engine](https://docs.docker.com/engine/install/) with the compose plugin, or `podman` + `podman-compose` from your distribution | |
+
+Start Docker Desktop (wait until it says it is running), open a terminal and check:
+
+```bash
+docker run --rm hello-world
+```
+
+If you see `Hello from Docker!`, you are ready. If not, see [Troubleshooting](#troubleshooting).
+
+**Get the files.** Either with git:
 
 ```bash
 git clone https://github.com/VelkyVenik/muni-pb158-examples.git
 cd muni-pb158-examples/socket-lab
+```
+
+or without git: on the [GitHub page](https://github.com/VelkyVenik/muni-pb158-examples)
+click **Code → Download ZIP**, unzip it, and in the terminal `cd` into the
+`socket-lab` folder inside it. (`cd` means "change directory". Tip: type `cd `
+and drag the folder into the terminal window.)
+
+## 2. Start the lab
+
+From the `socket-lab` folder:
+
+```bash
 docker compose run --rm lab
 ```
 
-The first run builds the image, which takes a few minutes. After that it starts in
-seconds. Run `docker compose build` again only if you change the `Dockerfile`.
+The first run downloads and builds the container image, which takes a few
+minutes. After that it starts in seconds. The demo then **runs by itself**: the
+server starts, waits, and two seconds later the client connects.
 
-With Podman, use `podman compose run --rm lab`.
+> **To quit, press `Ctrl-b`, release it, then press `d`.** This closes the lab and
+> stops the container. See [tmux basics](#tmux-basics) for more keys.
 
-Two more modes run the same demo with extra detail:
+With Podman, type `podman compose` instead of `docker compose` everywhere.
 
-```bash
-docker compose run --rm strace        # system calls under each socket call
-docker compose run --rm step          # the C code, line by line, as it runs
-docker compose run --rm step_strace   # both: each line of C and the system calls it makes
-```
+## 3. The four modes
+
+Each mode is the same demo with a different amount of detail. Go through them in this order:
+
+| Command | Adds | Use it to see |
+|---------|------|---------------|
+| `docker compose run --rm lab` | program output + packets | the big picture: who sends what, and when |
+| `docker compose run --rm strace` | + system calls (`strace`) | what the program asks the kernel, and what it gets back |
+| `docker compose run --rm step` | + the C code, line by line (`gdb`) | which line of C is running, and where it waits |
+| `docker compose run --rm step_strace` | C lines + system calls + packets, all together | one socket call going through every level |
+
+`step_strace` is the goal: one line of C, the system call it makes, the program's
+output and the packet that follows, all on one screen. The first three modes
+introduce those pieces one at a time.
 
 See [Watching system calls](#watching-system-calls-strace) and
 [Stepping through the code](#stepping-through-the-code-step).
@@ -67,6 +114,18 @@ Keep `server.c` and `client.c` open next to the demo.
 8. **Closing.** The client's `close()` sends a `FIN`. The server's `recv()` then returns `0`,
    the server closes its fd, which sends the second `FIN`.
 9. **Most socket calls send nothing at all.** See below.
+
+<details>
+<summary>Answers to 1 and 2</summary>
+
+1. Every program starts with three files already open: `0` = standard input (keyboard),
+   `1` = standard output, `2` = standard error (both the terminal). The kernel always
+   hands out the **lowest free** number, so the first new one is `3`.
+2. `fd=4`, the connection. The listening socket `fd=3` never carries data. Its only job
+   is to accept new connections. A server talking to 100 clients has one listening
+   socket plus 100 connection sockets.
+
+</details>
 
 ## Reading the packets
 
@@ -110,6 +169,12 @@ and `recv()` produce no packets. The kernel completes the handshake on its own a
 queues the connection. `accept()` only picks it up from that queue. Arriving data is
 acknowledged by the kernel and kept in a buffer. `recv()` only copies it out.
 Only `connect()`, `send()` and `close()` put packets on the wire.
+
+> **Careful: TCP does not keep messages apart.** Here one `send()` happens to give one
+> `DATA` packet and one `recv()`, because the messages are tiny. TCP only promises
+> that the *bytes* arrive, in order. The kernel may split one `send()` into several
+> packets, or join several sends into one `recv()`. Real programs call `recv()` in a
+> loop until they have the whole message. [Experiment 4](#4-a-message-bigger-than-the-buffer) shows this.
 
 Try `./client` while the server is *not* running: the `SYN` is answered by `RST`
 (reset) and `connect()` fails with `Connection refused`.
@@ -165,6 +230,9 @@ What to observe:
    the dynamic loader opening and closing a library file. That is why `socket()` gets 3 again.
 5. **The data is right there.** `recvfrom(4, "Hello server!", ...) = 13`: the return value is the
    number of bytes, exactly what the program prints next.
+6. **Errors come back from the kernel too.** Run `./trace ./client` with the server stopped:
+   `connect(...) = -1 ECONNREFUSED`. The `dup(2) = 4` and `close(4)` after it come from
+   `perror()`, which prints the error message through a copy of stderr (fd 2).
 
 To trace something by hand, press `Ctrl-C` in a pane (or use a free shell) and run:
 
@@ -256,19 +324,134 @@ The top half shows the source with the current line highlighted. Useful commands
 Step over `accept()` with `n` and gdb seems to freeze. It is waiting for a client.
 Run `./client` in the CLIENT pane and watch the line complete.
 
-## Experimenting
+## Experiments
 
-The server keeps running and waits for the next client. In the CLIENT pane you can:
+The server keeps running and waits for the next client, so you can run the
+client again in the CLIENT pane (click it first) at any time:
 
 ```bash
-./client              # run the client again
-make                  # rebuild after editing server.c / client.c on your machine
+./client
 ```
 
-Your local files are mounted into the container, so edit them in your usual
-editor, then run `make` inside. To restart the server, press `Ctrl-C` in its pane and
-run `./server`.
+Try the experiments below in the plain `lab` mode first, then in `strace` mode.
+**Guess the result before you look**, then open the answer.
 
+### 1. Two clients at once
+
+In the CLIENT pane run:
+
+```bash
+./client > /dev/null & ./client
+```
+
+This starts one client in the background (its output is thrown away) and a second one right after it.
+The server handles one client at a time. What happens to the second client's `connect()`?
+Watch the PACKETS pane.
+
+<details>
+<summary>What happens</summary>
+
+The second client's `SYN`, `SYN-ACK`, `ACK` appear **immediately**, and its `connect()`
+returns, even though the server program is busy with the first client and has not
+called `accept()`. Its `"Hello server!"` is even acknowledged (`ACK`) by the server's kernel.
+Only the reply comes later, after the server finishes with the first client.
+
+That is what `listen(listen_fd, 5)` means: the **kernel** accepts up to 5 connections by itself
+and queues them. `accept()` only takes the next one from that queue.
+
+</details>
+
+### 2. Kill the client
+
+Run `./client` and press `Ctrl-C` while it says `sleeping 2 s before sending...`.
+
+<details>
+<summary>What happens</summary>
+
+The packets show the handshake, then a `FIN` from the client with no `DATA` before it.
+The server's first `recv()` returns `0` (`client closed the connection`).
+
+The client never called `close()`. When a program ends, for whatever reason, the kernel
+closes all its file descriptors, and closing a TCP socket sends a `FIN`.
+
+</details>
+
+### 3. Be the client yourself
+
+`nc` (netcat) is a ready-made program that connects to a server and sends whatever you type:
+
+```bash
+nc 127.0.0.1 8080
+```
+
+Type `hello`, press Enter and wait. Then press `Ctrl-C` to quit `nc`.
+
+<details>
+<summary>What happens</summary>
+
+The server receives `"hello\n"`, **6 bytes**: Enter adds a newline character (`\n`).
+You see `Hello client!` as the reply. Then nothing happens until you press `Ctrl-C`,
+because the server waits for the client to close the connection.
+
+The server does not know or care that the other side is not `./client`. A protocol is only
+an agreement about which bytes go back and forth.
+
+</details>
+
+### 4. A message bigger than the buffer
+
+The server reads at most 1023 bytes per `recv()` (`BUF_SIZE` is 1024, minus one for the `'\0'`).
+Send it 2000. In `client.c`, replace the line
+
+```c
+    const char *msg = "Hello server!";
+```
+
+with
+
+```c
+    char msg[2001];
+    memset(msg, 'A', 2000);   /* 2000 times the letter A */
+    msg[2000] = '\0';
+```
+
+then run `make` and `./client` in the CLIENT pane.
+
+<details>
+<summary>What happens</summary>
+
+The packets show **one** `DATA` packet of 2000 bytes. But the server's first `recv()` returns
+`1023`, and its *second* `recv()`, the one meant to wait for the close, returns the remaining
+`977`. One `send()` was split across two `recv()` calls: TCP is a stream of bytes, not of messages.
+
+Undo your change afterwards (with git: `git checkout client.c`).
+
+</details>
+
+### 5. Start a second server
+
+Click the SERVER pane and press `Ctrl-b "` (Ctrl-b, then the double-quote key). This opens a new pane.
+Run `./server` there.
+
+<details>
+<summary>What happens</summary>
+
+`bind() failed: Address already in use`. Only one socket can listen on 127.0.0.1:8080.
+Close the extra pane with `exit`.
+
+</details>
+
+### Changing the code
+
+Your local files are mounted into the container. Edit `server.c` or `client.c` in
+your usual editor on your computer, then **inside the lab** run:
+
+```bash
+make                  # rebuild server and client
+./client              # run the new client
+```
+
+To restart the server, press `Ctrl-C` in its pane and run `./server`.
 `make clean` removes the built programs.
 
 ## tmux basics
@@ -284,6 +467,24 @@ run `./server`.
 
 Quitting stops the container. The next `docker compose run --rm lab` starts fresh.
 
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `docker: command not found` | Docker is not installed, or the terminal was opened before installing it. Install it and open a new terminal. |
+| `Cannot connect to the Docker daemon` / `error during connect` | Docker Desktop is not running. Start it and wait until it says it is running. With Podman on macOS/Windows: `podman machine start`. |
+| `the input device is not a TTY` (Windows) | You are in Git Bash. Use PowerShell or Windows Terminal, or put `winpty` in front: `winpty docker compose run --rm lab`. |
+| `no configuration file provided: not found` | You are not in the `socket-lab` folder. `cd` into it (it contains `compose.yaml`). |
+| `permission denied ... docker.sock` (Linux) | Run with `sudo`, or add yourself to the `docker` group ([how](https://docs.docker.com/engine/install/linux-postinstall/)). |
+| `podman compose` says it runs an external compose provider | That is normal. If it says no provider is found, install `podman-compose`. |
+| `Permission denied` on SELinux systems (Fedora, RHEL) | `compose.yaml` already sets `label=disable`. If you start the container another way, add `--security-opt label=disable`. |
+| `./packets: Permission denied` | The ZIP lost the "executable" bit. Run `bash start.sh` again (it fixes it), or `chmod +x packets trace step step_strace`. |
+| `cannot execute binary file: Exec format error` | `server`/`client` were built on your computer, not in the container. Run `make -B` inside the lab. |
+| The panes are tiny or garbled | Make the terminal window bigger *before* starting. `Ctrl-b z` zooms one pane. |
+| I closed the terminal window and the lab is still running | `docker ps` shows it. Stop it with `docker stop <the ID from docker ps>`. |
+| `make clean` fails on Linux with "Permission denied" | Files built in the container belong to root. Run `make clean` inside the lab. |
+| `step` is too slow / too fast | `Ctrl-C` in the pane, then `STEP_DELAY=0.2 ./step ./server` (seconds per line). |
+
 ## Files
 
 | File          | Purpose                                              |
@@ -297,5 +498,5 @@ Quitting stops the container. The next `docker compose run --rm lab` starts fres
 | `step_strace` | the same, plus the system calls each line makes      |
 | `step.py`     | the gdb (Python) script behind `step` and `step_strace` |
 | `packets`     | runs tcpdump and prints one readable line per packet |
-| `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2 |
+| `Dockerfile`  | Debian 12 with gcc, make, gdb, strace, tcpdump, tmux, iproute2, netcat |
 | `compose.yaml`| runs the container and mounts this directory at `/lab` |

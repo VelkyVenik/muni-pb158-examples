@@ -40,7 +40,12 @@ int main(void)
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(PORT);
-    inet_pton(AF_INET, SERVER_IP, &addr.sin_addr);
+    /* inet_pton() turns the text "127.0.0.1" into 4 bytes. Careful: it
+     * returns 1 on success and 0 (not -1) if the text is not an address. */
+    if (inet_pton(AF_INET, SERVER_IP, &addr.sin_addr) != 1) {
+        fprintf(stderr, "CLIENT: \"%s\" is not an IPv4 address\n", SERVER_IP);
+        return EXIT_FAILURE;
+    }
 
     printf("CLIENT: calling connect() to %s:%d\n", SERVER_IP, PORT);
     int rc = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
@@ -75,13 +80,19 @@ int main(void)
     printf("CLIENT: send() -> %zd bytes\n\n", n);
 
     /* 4. recv() waits for the server's reply. It BLOCKS until data
-     *    arrives, then returns the number of bytes copied into buf. */
+     *    arrives, then returns the number of bytes copied into buf,
+     *    or 0 if the server closed the connection instead. */
     char buf[BUF_SIZE];
     printf("CLIENT: calling recv()\n");
     printf("CLIENT: waiting for response...\n");
     n = recv(fd, buf, sizeof(buf) - 1, 0);
     if (n < 0) {
         perror("CLIENT: recv() failed");
+        return EXIT_FAILURE;
+    }
+    if (n == 0) {
+        printf("CLIENT: recv() -> 0 (server closed the connection)\n");
+        close(fd);
         return EXIT_FAILURE;
     }
     buf[n] = '\0'; /* recv() does not add a terminating '\0' */

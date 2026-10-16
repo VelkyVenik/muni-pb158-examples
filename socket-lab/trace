@@ -11,9 +11,10 @@
 #          ./trace ./client
 #
 # Only the system calls used in server.c / client.c are shown.
-# (send() and recv() show up as sendto() and recvfrom().)
+# (send() and recv() show up as sendto() and recvfrom(). dup() is there
+# because perror() uses it, together with close(), to print an error.)
 
-SYSCALLS=socket,setsockopt,bind,listen,accept,accept4,connect,getsockname,sendto,recvfrom,close
+SYSCALLS=socket,setsockopt,bind,listen,accept,accept4,connect,getsockname,sendto,recvfrom,close,dup
 
 # Program output and strace output go through ONE pipe, so their order is
 # preserved. The filter works on raw chunks, not whole lines, so an

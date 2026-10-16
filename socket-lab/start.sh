@@ -64,8 +64,11 @@ wait_for() {
     return 1
 }
 
-# 1. Build.
-make
+# 1. Build. -B rebuilds even if server/client exist: they may have been
+# built on your own computer (macOS, Windows) and would not run here.
+# chmod: a ZIP download or a Windows checkout can lose the "executable" bit.
+chmod +x packets trace step step_strace 2>/dev/null || true
+make -B
 
 # 2. Start from a clean slate.
 tmux kill-session -t "$SESSION" 2>/dev/null || true

@@ -7,6 +7,10 @@ services:
     # rebuild and rerun inside the container.
     volumes:
       - .:/lab
+    # Lets the container read the mounted files on Linux hosts with SELinux
+    # (Fedora, RHEL). Has no effect elsewhere.
+    security_opt:
+      - label=disable
     working_dir: /lab
     stdin_open: true
     tty: true
